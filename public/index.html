@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FLAPP — verified play</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--void:#0a0e12;--panel:#11171d;--line:#1d2730;--ink:#e8eef2;--mute:#6b7d8a;
+    --sig:#ffd23f;--sig-dim:#9c8126;--burn:#ff5a3c;--live:#3ddc84;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(900px 500px at 70% -10%,#14202a,transparent 60%),var(--void);
+    color:var(--ink);font-family:"DM Mono",ui-monospace,monospace;display:flex;
+    align-items:flex-start;justify-content:center;gap:28px;padding:28px;min-height:100vh}
+  @media(max-width:880px){body{flex-direction:column;align-items:center}}
+  .stage{width:380px;flex:0 0 auto}
+  .title{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .title h1{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:34px;
+    letter-spacing:-1.5px;color:var(--sig);line-height:1}
+  .title .tag{color:var(--mute);font-size:11px;letter-spacing:2px;text-transform:uppercase}
+  .frame{position:relative;width:380px;height:560px;border:1px solid var(--line);
+    border-radius:14px;overflow:hidden;background:#0a1014;box-shadow:0 30px 60px -30px #000}
+  canvas{display:block}
+  .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:16px;text-align:center;background:rgba(8,12,16,.82);
+    backdrop-filter:blur(3px);padding:24px}
+  .overlay.hidden{display:none}
+  .overlay h2{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:24px}
+  .overlay p{color:var(--mute);font-size:13px;line-height:1.6;max-width:300px}
+  .big{font-size:46px;color:var(--sig);font-family:"Space Grotesk",sans-serif;font-weight:700}
+  .verdict{font-size:13px;padding:6px 14px;border-radius:20px;font-weight:600}
+  .verdict.pass{background:rgba(61,220,132,.12);color:var(--live);border:1px solid rgba(61,220,132,.3)}
+  .verdict.review{background:rgba(255,210,63,.1);color:var(--sig);border:1px solid rgba(255,210,63,.3)}
+  .verdict.reject{background:rgba(255,90,60,.1);color:var(--burn);border:1px solid rgba(255,90,60,.3)}
+  .btn{appearance:none;border:1px solid var(--sig-dim);cursor:pointer;
+    background:linear-gradient(180deg,#ffe27a,#ffcf2e);color:#1a1407;font-family:"DM Mono",monospace;
+    font-weight:600;font-size:14px;padding:13px 26px;border-radius:9px;letter-spacing:.5px;transition:.1s}
+  .btn:hover{filter:brightness(1.06)}.btn:active{transform:translateY(1px)}
+  .btn:disabled{filter:grayscale(.7) brightness(.55);cursor:not-allowed}
+  .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+  .rail{width:340px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h3{font-size:10px;letter-spacing:2.5px;text-transform:uppercase;color:var(--mute);
+    margin-bottom:14px;font-weight:600}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:7px 0}
+  .row+.row{border-top:1px solid var(--line)}
+  .row .k{color:var(--mute);font-size:12px}.row .v{font-size:14px;font-weight:600}
+  .v.live{color:var(--live)}.v.sig{color:var(--sig)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td{padding:7px 4px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+  tr:first-child td{border-top:none}
+  .rank{color:var(--mute);width:26px}.who.me{color:var(--sig);font-weight:600}
+  .sc{text-align:right;font-weight:600}.lead-1 .rank{color:var(--sig)}
+  .conn{font-size:11px;display:flex;align-items:center;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--burn)}
+  .dot.on{background:var(--live)}
+  input{background:#0c0818;border:1px solid var(--line);border-radius:7px;color:var(--ink);
+    font-family:inherit;font-size:12px;padding:8px 10px;outline:none}
+  .note{font-size:10.5px;color:var(--sig-dim);line-height:1.6;margin-top:10px}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="title"><h1>FLAPP</h1><span class="tag">server-verified</span></div>
+    <div class="frame">
+      <canvas id="game" width="380" height="560"></canvas>
+      <div class="overlay" id="overlay">
+        <h2 id="ov-title">Verified leaderboard</h2>
+        <p id="ov-body">Your score isn't trusted from the browser — the server re-simulates your run from your inputs and computes the real score. Set a handle, then play.</p>
+        <div id="ov-score" class="big hidden"></div>
+        <div id="ov-verdict"></div>
+        <input id="namebox" maxlength="14" placeholder="your handle" style="width:200px;text-align:center">
+        <button class="btn" id="play-btn">Play a verified run</button>
+      </div>
+    </div>
+  </div>
+  <div class="rail">
+    <div class="card">
+      <h3>Server</h3>
+      <div class="row"><span class="k">Connection</span><span class="conn"><span class="dot" id="conn-dot"></span><span id="conn-txt">connecting…</span></span></div>
+      <div class="row"><span class="k">This run's seed</span><span class="v" id="seed">—</span></div>
+      <div class="row"><span class="k">Last verdict</span><span class="v" id="last-verdict">—</span></div>
+    </div>
+    <div class="card">
+      <h3>Leaderboard · live · server-verified</h3>
+      <table id="board"></table>
+      <div class="note">Every score here was re-simulated server-side from the player's inputs. A faked number can't appear — the server only believes the run it can reproduce.</div>
+    </div>
+  </div>
+
+<script type="module">
+import { CFG, mulberry32 } from '/engine.js';
+
+const API = location.origin;        // same origin — served by the game server
+const $=id=>document.getElementById(id);
+
+// ---------- identity ----------
+let myName = 'bird_'+Math.random().toString(36).slice(2,6);
+$('namebox').value = myName;
+let myPlayer = myName;               // in production: wallet address
+
+// ---------- connection + live board ----------
+function setConn(on){ $('conn-dot').classList.toggle('on',on); $('conn-txt').textContent = on?'connected':'offline'; }
+try{
+  const es = new EventSource(`${API}/events`);
+  es.onopen = ()=>setConn(true);
+  es.onerror = ()=>setConn(false);
+  es.onmessage = e=>renderBoard(JSON.parse(e.data));
+}catch(e){ setConn(false); }
+
+fetch(`${API}/board`).then(r=>r.json()).then(d=>{ setConn(true); renderBoard(d.rows||[]); }).catch(()=>setConn(false));
+
+function renderBoard(rows){
+  const sorted=[...rows].sort((a,b)=>b.score-a.score).slice(0,10);
+  if(!sorted.length){ $('board').innerHTML=`<tr><td colspan="3" style="color:var(--mute);text-align:center;padding:14px">No verified scores yet — be first</td></tr>`; return; }
+  $('board').innerHTML=sorted.map((r,i)=>`
+    <tr class="${i===0?'lead-1':''}">
+      <td class="rank">${i+1}</td>
+      <td class="who ${r.name===myName?'me':''}">${r.name===myName?r.name+' (you)':escapeHtml(r.name)}</td>
+      <td class="sc">${r.score}</td></tr>`).join('');
+}
+function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+// ---------- game (drives pipes from server seed via shared engine) ----------
+const cv=$('game'), ctx=cv.getContext('2d');
+const W=CFG.WORLD_W, H=CFG.WORLD_H, GROUND=CFG.GROUND_Y;
+let state='idle', session=null, rng=null;
+let birdY, birdV, score, tick, nextSpawn, pipes, flapTicks, lastFrameT, acc;
+
+const sky=[]; { let x=0; while(x<W){ const w=22+Math.random()*30,h=40+Math.random()*90; sky.push({x,w,h}); x+=w+6+Math.random()*14; } }
+
+function pipeTop(){ const min=CFG.PIPE_MIN_TOP, max=CFG.GROUND_Y-CFG.GAP-CFG.PIPE_MIN_TOP; return Math.floor(min+rng()*(max-min)); }
+
+async function startRun(){
+  const nm=$('namebox').value.trim().slice(0,14); if(nm){ myName=nm; myPlayer=nm; }
+  // ask server for a signed session + seed
+  let s;
+  try{
+    s = await fetch(`${API}/run/start`,{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({player:myPlayer})}).then(r=>r.json());
+  }catch(e){ $('ov-body').textContent='Could not reach the server. Is it running?'; return; }
+  if(!s||!s.seed){ $('ov-body').textContent='Server refused the run: '+(s&&s.error||'unknown'); return; }
+  session=s; $('seed').textContent=s.seed;
+  // init deterministic state from the SERVER seed
+  rng=mulberry32(s.seed);
+  birdY=H/2; birdV=0; score=0; tick=0; nextSpawn=CFG.SPAWN_TICKS; pipes=[]; flapTicks=[]; acc=0; lastFrameT=performance.now();
+  state='playing'; $('overlay').classList.add('hidden');
+  requestAnimationFrame(frame);
+}
+
+function flap(){ if(state==='playing'){ birdV=CFG.FLAP_V; flapTicks.push(tick); } }
+
+// fixed-timestep stepping so on-screen play matches server simulation exactly
+function step(){
+  birdV+=CFG.GRAVITY; birdY+=birdV;
+  if(tick>=nextSpawn){ pipes.push({x:W,top:pipeTop(),scored:false}); nextSpawn+=CFG.SPAWN_TICKS; }
+  for(const p of pipes){
+    p.x-=CFG.SPEED;
+    if(!p.scored && p.x+CFG.PIPE_W<CFG.BIRD_X){ p.scored=true; score++; }
+    const inX=(CFG.BIRD_X+CFG.BIRD_R>p.x)&&(CFG.BIRD_X-CFG.BIRD_R<p.x+CFG.PIPE_W);
+    const inGap=(birdY-CFG.BIRD_R>p.top)&&(birdY+CFG.BIRD_R<p.top+CFG.GAP);
+    if(inX&&!inGap){ die(); return; }
+  }
+  for(let i=pipes.length-1;i>=0;i--) if(pipes[i].x+CFG.PIPE_W<-10) pipes.splice(i,1);
+  if(birdY+CFG.BIRD_R>GROUND||birdY-CFG.BIRD_R<0){ die(); return; }
+  tick++;
+}
+
+function frame(now){
+  if(state!=='playing') return;
+  acc += now-lastFrameT; lastFrameT=now;
+  let guard=0;
+  while(acc>=CFG.TICK_MS && state==='playing' && guard++<10){ step(); acc-=CFG.TICK_MS; }
+  draw();
+  if(state==='playing') requestAnimationFrame(frame);
+}
+
+async function die(){
+  state='dead';
+  $('ov-title').textContent='Verifying…';
+  $('ov-body').textContent='Submitting your inputs to the server for re-simulation.';
+  $('ov-score').classList.add('hidden'); $('ov-verdict').innerHTML='';
+  $('overlay').classList.remove('hidden');
+  // submit INPUTS, not the score
+  try{
+    const r = await fetch(`${API}/run/submit`,{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({session, flapTicks, name:myName})}).then(r=>r.json());
+    showResult(r);
+  }catch(e){ $('ov-body').textContent='Submit failed — server unreachable.'; resetBtn(); }
+}
+
+function showResult(r){
+  const localScore = score;
+  if(r.accepted){
+    $('ov-title').textContent = (r.verdict==='review')?'Counted — flagged for review':'Verified';
+    $('ov-body').innerHTML = `Server re-simulated your run from your inputs.<br>On-screen: <b>${localScore}</b> · server-verified: <b>${r.score}</b>`;
+  }else{
+    $('ov-title').textContent='Rejected';
+    $('ov-body').innerHTML = `The server could not verify this run (${r.reason||r.verdict}). Nothing was added to the board.`;
+  }
+  const sc=$('ov-score'); sc.textContent=r.score!=null?r.score:'—'; sc.classList.remove('hidden');
+  const v=r.verdict||(r.accepted?'pass':'reject');
+  $('ov-verdict').innerHTML=`<span class="verdict ${v}">${v.toUpperCase()}</span>`;
+  $('last-verdict').textContent=v;
+  resetBtn();
+}
+function resetBtn(){ $('play-btn').textContent='Play another verified run'; }
+
+function draw(){
+  const g=ctx.createLinearGradient(0,0,0,GROUND);
+  g.addColorStop(0,'#2b2b52');g.addColorStop(.55,'#3d3a6b');g.addColorStop(1,'#5a6b8c');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,GROUND);
+  ctx.fillStyle='#ffffff55';for(let i=0;i<22;i++){const sx=(i*53+17)%W,sy=(i*31+9)%(GROUND-160);ctx.fillRect(sx,sy,2,2);}
+  ctx.fillStyle='#3a4a6b';for(const b of sky)ctx.fillRect(b.x,GROUND-40-b.h,b.w,b.h);
+  for(const p of pipes) drawPipe(p.x,p.top);
+  ctx.fillStyle='#ded895';ctx.fillRect(0,GROUND,W,H-GROUND);
+  ctx.fillStyle='#5bbd3e';ctx.fillRect(0,GROUND,W,12);
+  ctx.fillStyle='#74d653';for(let x=0;x<W;x+=10)ctx.fillRect(x,GROUND,5,5);
+  ctx.fillStyle='#2f6b1e';ctx.fillRect(0,GROUND+12,W,3);
+  if(state==='playing') drawBird();
+  ctx.fillStyle='#fff';ctx.strokeStyle='#3a2a00';ctx.lineWidth=4;
+  ctx.font='700 42px "Space Grotesk",sans-serif';ctx.textAlign='center';
+  ctx.strokeText(score,W/2,72);ctx.fillText(score,W/2,72);
+}
+function drawPipe(x,topH){
+  const bw=CFG.PIPE_W,lw=bw+8,lh=18;
+  ctx.fillStyle='#5bbd3e';ctx.fillRect(x,0,bw,topH-lh);
+  ctx.fillStyle='#74d653';ctx.fillRect(x+4,0,7,topH-lh);
+  ctx.fillStyle='#3f8f29';ctx.fillRect(x+bw-8,0,8,topH-lh);
+  ctx.fillStyle='#5bbd3e';ctx.fillRect(x-4,topH-lh,lw,lh);
+  ctx.fillStyle='#2f6b1e';ctx.fillRect(x-4,topH-3,lw,3);
+  const by=topH+CFG.GAP,bh=GROUND-by;
+  ctx.fillStyle='#5bbd3e';ctx.fillRect(x,by+lh,bw,bh-lh);
+  ctx.fillStyle='#74d653';ctx.fillRect(x+4,by+lh,7,bh-lh);
+  ctx.fillStyle='#3f8f29';ctx.fillRect(x+bw-8,by+lh,8,bh-lh);
+  ctx.fillStyle='#5bbd3e';ctx.fillRect(x-4,by,lw,lh);
+  ctx.fillStyle='#2f6b1e';ctx.fillRect(x-4,by,lw,3);
+}
+function drawBird(){
+  ctx.save();ctx.translate(CFG.BIRD_X,birdY);
+  ctx.rotate(Math.max(-0.5,Math.min(1.1,birdV*0.06)));
+  const up=Math.floor(tick/6)%2===0;
+  ctx.fillStyle='#ffd23f';ctx.fillRect(-12,-10,22,20);
+  ctx.fillStyle='#e0a800';ctx.fillRect(-12,4,22,6);
+  ctx.fillStyle='#f7f3df';ctx.fillRect(-4,0,14,9);
+  ctx.fillStyle='#f7f3df';ctx.fillRect(-12,up?-4:2,9,6);
+  ctx.fillStyle='#fff';ctx.fillRect(2,-8,8,8);
+  ctx.fillStyle='#2a2a2a';ctx.fillRect(6,-6,3,4);
+  ctx.fillStyle='#f0820f';ctx.fillRect(10,-2,9,5);
+  ctx.fillStyle='#d96b00';ctx.fillRect(10,3,7,3);
+  ctx.strokeStyle='#3a2a00';ctx.lineWidth=2;ctx.strokeRect(-12,-10,22,20);
+  ctx.restore();
+}
+
+$('play-btn').addEventListener('click',startRun);
+window.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();flap();}});
+cv.addEventListener('pointerdown',flap);
+draw();
+</script>
+</body>
+</html>
