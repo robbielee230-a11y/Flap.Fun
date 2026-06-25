@@ -2805,7 +2805,7 @@ function shopPreviewLoop(){
 // extension (or Phantom's in-app browser). Won't work in a file:// preview.
 const WALLET = { pubkey:null };
 // the Phantom provider, if present
-function phantom(){
+function getPhantom(){
   // modern Phantom exposes window.phantom.solana; older builds use window.solana
   const p = (window.phantom && window.phantom.solana) ? window.phantom.solana
           : (window.solana && window.solana.isPhantom) ? window.solana : null;
@@ -2815,7 +2815,7 @@ function walletConnected(){ return !!WALLET.pubkey; }
 function shortAddr(a){ return a ? a.slice(0,4)+'…'+a.slice(-4) : ''; }
 
 async function connectWallet(){
-  const p=phantom();
+  const p=getPhantom();
   if(!p){
     // Phantom not available — point the user to install it
     const go = confirm('Phantom wallet not detected.\n\nCompetitive mode needs a Solana wallet. Open phantom.com to install it?\n\n(If you DO have Phantom, make sure this page is opened in a normal browser tab, not a file preview.)');
@@ -2833,7 +2833,7 @@ async function connectWallet(){
   }
 }
 async function disconnectWallet(){
-  const p=phantom();
+  const p=getPhantom();
   try{ if(p && p.disconnect) await p.disconnect(); }catch(e){}
   WALLET.pubkey=null;
   onWalletChange();
@@ -2868,7 +2868,7 @@ $('walletBtn').addEventListener('click',()=>{
 });
 // react to Phantom-side changes (account switch / disconnect from the extension)
 (function wireProvider(){
-  const p=phantom();
+  const p=getPhantom();
   if(!p) return;
   // if Phantom already trusts this site, connect silently on load
   p.connect({ onlyIfTrusted:true }).then(res=>{
@@ -2916,7 +2916,7 @@ async function serverSignIn(){
       body:JSON.stringify({wallet:WALLET.pubkey})}).then(r=>r.json());
     if(!n.nonce) return;
     const enc=new TextEncoder().encode(n.nonce);
-    const p=phantom(); if(!p||!p.signMessage) return;
+    const p=getPhantom(); if(!p||!p.signMessage) return;
     const sig=await p.signMessage(enc,'utf8');
     const sigBytes=sig.signature||sig;     // Phantom returns {signature:Uint8Array}
     const v=await fetch(API+'/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},
