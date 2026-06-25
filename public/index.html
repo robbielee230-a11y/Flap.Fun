@@ -68,6 +68,15 @@
   @media (max-aspect-ratio:3/2){ .frame{width:100%;height:auto} }
   #game,#loadsky{position:absolute;inset:0;width:100%;height:100%;display:block}
   canvas{display:block}
+  /* PORTRAIT phones: fill the whole stage width so there are no black side bars.
+     The canvas WIDTH fills the screen; being 3:2 it's shorter than a tall screen,
+     but we scale it up to cover height too and crop a little off top/bottom (sky +
+     ground edges), keeping the full horizontal course and the bird fully visible. */
+  @media (max-aspect-ratio:3/2) and (max-width:760px){
+    .frame{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;max-width:none}
+    #game,#loadsky{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      width:auto;height:auto;min-width:100%;min-height:100%;max-width:none}
+  }
   /* ===== FULL-SCREEN LOADING SCREEN ===== */
   .loader{position:absolute;inset:0;z-index:30;overflow:hidden;
     transition:opacity .55s ease}
@@ -1755,6 +1764,7 @@ function beginCountdown(){
 }
 function flap(){
   if(state!=='playing') return;
+  if(vsLocked()) return;               // headstart: P2 controls locked for 1s
   const F=curFlight();
   // mode-based tap behaviours
   if(F.mode==='wave'){ waveDir*=-1; charFlapFX(); flapPuff(); return; }       // flip undulation direction
@@ -1772,6 +1782,7 @@ function flapPuff(){
 // ---- fire the pipe-breaker ability (laser / flame) ----
 function fireAbility(){
   if(state!=='playing') return;
+  if(vsLocked()) return;               // headstart: P2 controls locked
   const ab=curAbility(); if(!ab) return;
   const now=performance.now();
   if(now < blastReadyAt) return;              // still cooling down
@@ -1830,7 +1841,7 @@ function fireAbility(){
   }
 }
 // press / release for hold-style (jetpack) flight
-function thrustOn(){ if(state==='playing' && curFlight().input==='hold'){ holding=true; if(!thrustOn._s){charFlapFX();thrustOn._s=1;setTimeout(()=>thrustOn._s=0,90);} } }
+function thrustOn(){ if(state==='playing' && !vsLocked() && curFlight().input==='hold'){ holding=true; if(!thrustOn._s){charFlapFX();thrustOn._s=1;setTimeout(()=>thrustOn._s=0,90);} } }
 function thrustOff(){ holding=false; }
 function burst(x,y,n,colors,spd){
   for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=Math.random()*spd;
@@ -2052,6 +2063,23 @@ function drawCelebBird(b){
 }
 
 function step(){
+  // ---- headstart hold: while P2's controls are locked, keep the bird hovering
+  // at center (no gravity) so they don't fall and die. The world still scrolls. ----
+  if(vsLocked()){
+    birdY = H/2; birdV = 0;
+    worldX += curSpeed();
+    const gap0=curGap(), spd0=curSpeed(), sg0=curSpawn();
+    if(tick>=nextSpawn){
+      const min=CFG.PIPE_MIN_TOP, max=GROUND-gap0-CFG.PIPE_MIN_TOP;
+      const baseTop=Math.floor(min+vsRand()*(max-min));
+      pipes.push({ x:W, baseTop, top:baseTop, gap:gap0, scored:false, amp:curMoveAmp(), mspd:curMoveSpeed(), phase:vsRand()*Math.PI*2 });
+      nextSpawn += sg0;
+    }
+    for(const p of pipes){ p.x -= spd0; }
+    for(let i=pipes.length-1;i>=0;i--) if(pipes[i].x+CFG.PIPE_W<-10) pipes.splice(i,1);
+    tick++;
+    return;                              // skip collision/scoring while held
+  }
   // ---- flight-style physics ----
   const F=curFlight();
   if(F.mode==='wave'){
@@ -2222,13 +2250,6 @@ function die(){
 }
 
 function draw(){
-  // ===== VS STACKED SPLIT-SCREEN: your world in the TOP band =====
-  const splitVS = VS && (state==='playing'||state==='dead');
-  ctx.save();
-  if(splitVS){
-    ctx.beginPath(); ctx.rect(0,0,W,H*0.5); ctx.clip();
-    ctx.scale(1, 0.5);                 // compress full world into the top band
-  }
   ctx.save();
   if(shake>0) ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);
 
@@ -2364,6 +2385,7 @@ function draw(){
   }
   ctx.globalAlpha=1;
 
+  if(VS && (state==='playing'||state==='dead')) drawSharedOpponent();
   if(state==='playing'||state==='dead'||state==='countdown') drawBird();
 
   if(flashT>0){ ctx.fillStyle='rgba(255,255,255,'+(flashT*0.18).toFixed(3)+')'; ctx.fillRect(-20,0,W+40,H); }
@@ -2483,8 +2505,22 @@ function draw(){
     }
   }
 
+  // ---- headstart hold indicator (P2 while locked) ----
+  if(vsLocked()){
+    const remain=Math.ceil((vsControlLockUntil-performance.now())/1000);
+    ctx.save(); ctx.textAlign='center';
+    ctx.font='800 30px "Space Grotesk",sans-serif';
+    ctx.lineWidth=6; ctx.strokeStyle='rgba(0,0,0,0.55)'; ctx.fillStyle='#ffd23f';
+    ctx.strokeText('Opponent has a head start…', W/2, H*0.40);
+    ctx.fillText('Opponent has a head start…', W/2, H*0.40);
+    ctx.font='800 64px "Space Grotesk",sans-serif'; ctx.fillStyle='#fff';
+    ctx.strokeText(String(remain), W/2, H*0.40+62);
+    ctx.fillText(String(remain), W/2, H*0.40+62);
+    ctx.restore();
+  }
+
   // ---- control hint at the start of a run (style-aware) ----
-  if(state==='playing' && score===0 && tick<150){
+  if(state==='playing' && score===0 && tick<150 && !vsLocked()){
     const F=curFlight();
     const fade = tick<120 ? 1 : (150-tick)/30;
     ctx.save(); ctx.globalAlpha=Math.max(0,fade)*0.9; ctx.textAlign='center';
@@ -2532,58 +2568,35 @@ function draw(){
   }
 
   ctx.restore();   // end inner (shake) save
-
-  if(splitVS){
-    ctx.restore();             // end top-band clip/scale
-    drawOpponentBand();        // opponent in the bottom band
-    drawSplitDivider();        // seam + labels
-  } else {
-    ctx.restore();
-  }
+  ctx.restore();   // end outer save
 }
 
-// render the opponent's world into the BOTTOM half (same seeded course, their bird)
-function drawOpponentBand(){
-  ctx.save();
-  ctx.beginPath(); ctx.rect(0,H*0.5,W,H*0.5); ctx.clip();
-  ctx.translate(0,H*0.5);
-  ctx.scale(1,0.5);
-  MAP().paint(ctx,W,GROUND,worldX,state,animClock||0);
-  if(pipes) for(const p of pipes){ if(!p.broken) drawPipe(p.x,p.top,p.gap); }
-  // opponent bird (counter-scaled vertically so it isn't squashed)
+// draw the opponent's bird in the SAME shared world, offset on X so the two
+// don't overlap. Called from the draw path during a versus match.
+function drawSharedOpponent(){
+  if(!VS) return;
+  const ox = CFG.BIRD_X - 70;                              // opponent flies just behind you
   const oy = Math.max(CFG.BIRD_R, Math.min(GROUND-CFG.BIRD_R, oppState.y));
   ctx.save();
-  ctx.translate(CFG.BIRD_X, oy);
+  ctx.globalAlpha = oppState.alive ? 0.92 : 0.3;
+  ctx.translate(ox, oy);
   ctx.rotate(oppState.rot||0);
-  ctx.scale(1.4,1.4*2);            // *2 undoes the 0.5 band squash
-  if(!oppState.alive) ctx.globalAlpha=0.4;
+  ctx.scale(1.4,1.4);
   drawBirdSprite(ctx,{clock:animClock, flapUp:Math.floor(animClock/120)%2===0,
     character:(VS.opponent&&VS.opponent.character)||'bird'});
   ctx.restore();
+  // name tag + crash marker above the opponent
+  ctx.save();
+  ctx.globalAlpha=0.95; ctx.textAlign='center';
+  ctx.font='700 13px "Space Grotesk",sans-serif';
+  ctx.fillStyle=oppState.alive?'#ff8a7a':'#7d8b97';
+  ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,0.5)';
+  const nm=(VS.opponent&&VS.opponent.name)||'Opponent';
+  ctx.strokeText(nm, ox, oy-30); ctx.fillText(nm, ox, oy-30);
   if(!oppState.alive){
-    ctx.fillStyle='#ff5a4d'; ctx.font='800 80px "Space Grotesk",sans-serif'; ctx.textAlign='center';
-    ctx.globalAlpha=0.9; ctx.fillText('CRASHED', W/2, H*0.6); ctx.globalAlpha=1;
+    ctx.fillStyle='#ff5a4d'; ctx.font='800 12px "Space Grotesk",sans-serif';
+    ctx.fillText('CRASHED', ox, oy-15);
   }
-  ctx.restore();
-  // opponent name + score badge (unscaled, inside the bottom band)
-  ctx.save();
-  ctx.fillStyle='rgba(8,12,18,0.6)'; rr(ctx,12,H*0.5+10,200,30,8); ctx.fill();
-  ctx.fillStyle='#ff8a7a'; ctx.font='700 15px "Space Grotesk",sans-serif'; ctx.textAlign='left';
-  ctx.fillText('⚔ '+((VS.opponent&&VS.opponent.name)||'Opponent'), 22, H*0.5+30);
-  ctx.fillStyle='#fff'; ctx.textAlign='right'; ctx.font='800 26px "Space Grotesk",sans-serif';
-  ctx.fillText(String(oppState.score), W-22, H*0.75);
-  ctx.restore();
-}
-// the dividing seam + "YOU" label between the two bands
-function drawSplitDivider(){
-  ctx.save();
-  const g=ctx.createLinearGradient(0,H*0.5-4,0,H*0.5+4);
-  g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(0.5,'#ffd23f'); g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=g; ctx.fillRect(0,H*0.5-4,W,8);
-  ctx.fillStyle='#ffd23f'; ctx.fillRect(0,H*0.5-1,W,2);
-  // YOUR score + label on the top band
-  ctx.fillStyle='#3ddc84'; ctx.font='800 13px "Space Grotesk",sans-serif'; ctx.textAlign='left';
-  ctx.fillText('YOU', 22, H*0.5-12);
   ctx.restore();
 }
 
@@ -2607,11 +2620,10 @@ function drawPipe(x,topH,gap){
 // The bird's shape/cosmetics now live in drawBirdSprite (TWEAK ZONE 2).
 // This just positions, rotates and scales it in the game world.
 function drawBird(){
-  const sv = (VS && (state==='playing'||state==='dead')) ? 2 : 1;  // undo 0.5 squash in split
   ctx.save();
   ctx.translate(CFG.BIRD_X,birdY);
   ctx.rotate(Math.max(-0.5,Math.min(1.1,birdV*0.05)));
-  ctx.scale(1.4,1.4*sv);   // sprite scaled up; vertical counter-scale in split mode
+  ctx.scale(1.4,1.4);   // sprite scaled up for the wider canvas
   drawBirdSprite(ctx, {clock:animClock, flapUp:Math.floor(tick/5)%2===0});
   ctx.restore();
 }
@@ -2958,6 +2970,8 @@ function wsURL(){
   return API.replace(/^http/,'ws').replace(/\/+$/,'') + '/ws';
 }
 let VSWS=null;          // the WebSocket
+let vsControlLockUntil=0;   // performance.now() until which P2's controls are locked (headstart)
+function vsLocked(){ return vsControlLockUntil>0 && performance.now()<vsControlLockUntil; }
 // opponent render state (with interpolation buffer)
 let oppState={ y:300, vy:0, rot:0, score:0, alive:true, ty:300 };
 
@@ -3031,6 +3045,10 @@ function startVersusRun(){
   holding=false; waveDir=-1; gravDir=1; runStart=performance.now(); blastReadyAt=performance.now()+1200; blastFx=null;
   resetFX();
   oppState={ y:H/2, vy:0, rot:0, score:0, alive:true, ty:H/2 };
+  // 1-SECOND HEADSTART: Player 1 (side 0) can flap immediately; Player 2 (side 1)
+  // has controls locked for 1s (their bird coasts), then unlocks. World scrolls
+  // for both from the same moment, so they stay on one shared screen.
+  vsControlLockUntil = (VS && VS.side===1) ? performance.now()+1000 : 0;
   musStop();
   state='playing'; $('overlay').classList.add('hidden'); startLoop();
 }
