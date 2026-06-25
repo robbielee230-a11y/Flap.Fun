@@ -44,6 +44,11 @@
   .topbar .spacer{flex:1}
   .pill{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--sig);
     background:#2a1d47;border:1px solid #4a357d;border-radius:9px;padding:9px 13px}
+  .dot-live{width:7px;height:7px;border-radius:50%;background:#3ddc84;
+    box-shadow:0 0 7px #3ddc84;animation:livePulse 1.8s ease-in-out infinite;display:inline-block}
+  @keyframes livePulse{0%,100%{opacity:1}50%{opacity:.45}}
+  #onlinePill{color:#bfffd9}
+  #holdPill{color:#ffe08a} #holdPill b{color:#fff;font-family:"Space Grotesk",sans-serif;font-weight:700}
   .hi-pill b{font-family:"Space Grotesk",sans-serif;font-weight:700;color:#fff;font-size:13px}
   .hi-pill.bump{animation:hiBump .6s ease}
   @keyframes hiBump{0%{transform:scale(1)}30%{transform:scale(1.22);border-color:var(--sig);
@@ -336,8 +341,10 @@
     <button class="tab vs-tab" id="vsTab"><span class="ic">⚔️</span><span class="label">1v1</span></button>
     <button class="tab" data-tab="settings"><span class="ic">⚙️</span><span class="label">Settings</span></button>
     <div class="spacer"></div>
+    <div class="pill" id="onlinePill" style="display:none"><span class="dot-live"></span>0 online</div>
     <div class="pill hi-pill" id="hiPill"><span class="ic">🏆</span>BEST <b id="hiVal">0</b></div>
     <div class="pill" id="navMode">CASUAL</div>
+    <div class="pill" id="holdPill" style="display:none">💰 <b id="holdPillVal">—</b> FLAPP</div>
     <button class="tab wallet-btn" id="walletBtn"><span class="ic">👻</span><span id="walletLabel">Connect Wallet</span></button>
   </div>
 
@@ -3015,6 +3022,28 @@ function wsURL(){
   return API.replace(/^http/,'ws').replace(/\/+$/,'') + '/ws';
 }
 let VSWS=null;          // the WebSocket
+let VS_STATS={ online:0, queue:0 };       // live player counts from the server
+let STATSWS=null;                          // lightweight lobby socket for live counts
+
+// keep a lobby socket open just to receive live player-count stats (only when a
+// real backend is configured). Reconnects if it drops.
+function connectStatsSocket(){
+  if(!API) return;                         // offline sandbox: no counts
+  if(STATSWS && (STATSWS.readyState===0||STATSWS.readyState===1)) return;
+  try{ STATSWS=new WebSocket(wsURL()); }catch(e){ return; }
+  STATSWS.onmessage=(ev)=>{ let m; try{ m=JSON.parse(ev.data); }catch{ return; }
+    if(m.t==='stats'){ VS_STATS.online=m.online||0; VS_STATS.queue=m.queue||0; updateLobbyStats(); } };
+  STATSWS.onclose=()=>{ STATSWS=null; setTimeout(connectStatsSocket, 4000); };  // auto-reconnect
+  STATSWS.onerror=()=>{ try{STATSWS.close();}catch(e){} };
+}
+// reflect the live counts in the lobby (a small pill in the top bar)
+function updateLobbyStats(){
+  const el=$('onlinePill'); if(!el) return;
+  if(!API){ el.style.display='none'; return; }
+  el.style.display='';
+  el.innerHTML='<span class="dot-live"></span>'+VS_STATS.online+' online'+
+    (VS_STATS.queue>0?(' · '+VS_STATS.queue+' in queue'):'');
+}
 let vsControlLockUntil=0;   // performance.now() until which P2's controls are locked (headstart)
 function vsLocked(){ return vsControlLockUntil>0 && performance.now()<vsControlLockUntil; }
 // opponent render state (with interpolation buffer)
@@ -3023,6 +3052,8 @@ let oppState={ y:300, vy:0, rot:0, score:0, alive:true, ty:300 };
 // public: start matchmaking
 function vsFindMatch(){
   if(!API){ vsToast('Online play needs the backend (set API).'); return; }
+  // close the lobby stats socket — the match socket will receive stats instead
+  try{ if(STATSWS){ STATSWS.onclose=null; STATSWS.close(); STATSWS=null; } }catch(e){}
   vsSetScreen('queue','Finding an opponent…');
   try{
     VSWS=new WebSocket(wsURL());
@@ -3040,6 +3071,14 @@ function vsFindMatch(){
 
 function handleVSMessage(m){
   switch(m.t){
+    case 'stats':
+      VS_STATS.online = m.online||0; VS_STATS.queue = m.queue||0;
+      updateLobbyStats();
+      // if we're on the queue screen, refresh its live counts too
+      if($('vsScreen') && $('vsScreen').classList.contains('show') && VS && !VS.started){
+        const sub=$('vsQueueCount'); if(sub) sub.textContent=VS_STATS.queue+' in queue · '+VS_STATS.online+' online';
+      }
+      break;
     case 'queued': vsSetScreen('queue','In queue… waiting for a player'); break;
     case 'matched':
       VS={ seed:m.seed, side:m.side, opponent:m.opponent, started:false, ended:false };
@@ -3101,6 +3140,7 @@ function startVersusRun(){
 function cleanupVS(){
   try{ if(VSWS) VSWS.close(); }catch(e){}
   VSWS=null; VS=null;
+  if(typeof connectStatsSocket==='function') connectStatsSocket();   // resume lobby counts
 }
 function vsLeave(){
   try{ if(VSWS&&VSWS.readyState===1) VSWS.send(JSON.stringify({t:'leave'})); }catch(e){}
@@ -3114,7 +3154,9 @@ function vsSetScreen(kind,text){
   const el=$('vsScreen'); if(!el) return;
   el.classList.add('show');
   let html='';
-  if(kind==='queue'){ html='<div class="vs-spin"></div><div class="vs-big">'+text+'</div><button class="vs-btn" id="vsCancel">Cancel</button>'; }
+  if(kind==='queue'){ html='<div class="vs-spin"></div><div class="vs-big">'+text+'</div>'+
+    '<div class="vs-sub" id="vsQueueCount">'+(VS_STATS.queue+' in queue · '+VS_STATS.online+' online')+'</div>'+
+    '<button class="vs-btn" id="vsCancel">Cancel</button>'; }
   else if(kind==='matched'){
     const myChar=LOADOUT.character||'bird';
     const oppChar=(VS&&VS.opponent&&VS.opponent.character)||'bird';
@@ -3349,6 +3391,16 @@ function fmtBal(n){ if(n==null) return '—';
 function updateHoldingsUI(){
   const el=$('holdVal'); if(el) el.textContent=fmtBal(TOKEN_BALANCE);
   const lab=$('holdLabel'); if(lab) lab.textContent = TOKEN.mint ? 'coin held' : 'coin held (sim)';
+  // lobby top-bar holdings pill — only shown once a wallet is connected
+  const pill=$('holdPill'), pv=$('holdPillVal');
+  if(pill && pv){
+    if(walletConnected() && TOKEN_BALANCE!=null){
+      pv.textContent=fmtBal(TOKEN_BALANCE);
+      pill.style.display='';
+    } else {
+      pill.style.display='none';
+    }
+  }
 }
 // ===== END TWEAK ZONE 11 =====
 
@@ -3790,6 +3842,8 @@ const LTIPS = ['warming up the wings…','painting the clouds…','rounding up t
 
 resetFX();
 pipes=pipes||[];   // ensure iterable before the first idle-lobby draw
+if(typeof connectStatsSocket==='function') connectStatsSocket();   // live player counts in lobby
+if(typeof updateLobbyStats==='function') updateLobbyStats();
 
 // ===== MOBILE: landscape-only =====
 // Mark phones so the rotate-to-landscape cover can show in portrait, and TRY a
