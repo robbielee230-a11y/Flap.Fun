@@ -2974,8 +2974,12 @@ function bs58enc(bytes){
 }
 
 // prove wallet ownership to the server (Phantom signs a server nonce)
+let _signingIn=false;
 async function serverSignIn(){
   if(!API || !WALLET.pubkey) return;
+  if(SESSION) return;                       // already signed in — don't re-prompt
+  if(_signingIn) return;                    // a sign-in is already in flight
+  _signingIn=true;
   try{
     const n=await fetch(API+'/auth/nonce',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({wallet:WALLET.pubkey})}).then(r=>r.json());
@@ -2987,7 +2991,9 @@ async function serverSignIn(){
     const v=await fetch(API+'/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({wallet:WALLET.pubkey, signature:bs58enc(sigBytes), nonce:n.nonce})}).then(r=>r.json());
     if(v.session){ SESSION=v.session; await refreshHoldings(); }
+    else { console.warn('sign-in rejected:', v && (v.error||v.reason||JSON.stringify(v))); }
   }catch(e){ console.warn('server sign-in failed',e); }
+  finally{ _signingIn=false; }
 }
 function serverSignOut(){ SESSION=null; SERVER_UNLOCKS=null; }
 
