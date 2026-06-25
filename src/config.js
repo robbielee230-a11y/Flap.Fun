@@ -23,6 +23,8 @@ export const CONFIG = {
 
   // token tier thresholds (whole tokens held -> tier). Mirror the game's TWEAK ZONE 11.
   TIERS: { t1: 100, t2: 1000, t3: 10000, t4: 50000, t5: 250000, t6: 1000000 },
+  // FLAP a wallet must HOLD to rank on the high-score board (held, not spent).
+  HIGHSCORE_ENTRY_THRESHOLD: parseInt(process.env.HIGHSCORE_ENTRY_THRESHOLD || '100', 10),
 
   // rank tiers (required final placement -> tier). Mirror the game's RANK.
   RANKS: { r1: 1, r3: 3, r10: 10, r30: 30, r100: 100 },
@@ -30,7 +32,7 @@ export const CONFIG = {
   // ----- seasons -----
   // season length in milliseconds (3 days). Seasons are derived from epoch time so
   // every server/client agrees without coordination: seasonId = floor(now / SEASON_MS).
-  SEASON_MS: parseInt(process.env.SEASON_MS || String(3 * 24 * 60 * 60 * 1000), 10),
+  SEASON_MS: parseInt(process.env.SEASON_MS || String(24 * 60 * 60 * 1000), 10),
 
   // ----- anti-cheat (score validation) -----
   // reject scores above this hard ceiling outright
