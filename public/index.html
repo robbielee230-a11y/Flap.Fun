@@ -61,23 +61,13 @@
   .mode-card.locked .mlock{display:inline-block}
   .mode-card.locked .mbadge{display:none}
   /* ===== GAME FRAME fills the rest of the screen ===== */
+  /* The canvas BITMAP is resized in JS to match the stage's aspect ratio, so
+     fitting it to 100%/100% fills the screen exactly — no black bars, no crop. */
   .stagewrap{flex:1;position:relative;min-height:0;background:#06090d;
     display:flex;align-items:center;justify-content:center;overflow:hidden}
-  .frame{position:relative;aspect-ratio:3/2;width:auto;height:100%;max-width:100%;overflow:hidden;
-    background:#0a1014;box-shadow:0 0 60px -10px #000}
-  @media (max-aspect-ratio:3/2){ .frame{width:100%;height:auto} }
+  .frame{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#0a1014}
   #game,#loadsky{position:absolute;inset:0;width:100%;height:100%;display:block}
   canvas{display:block}
-  /* LANDSCAPE phones: fill the whole stage with the game (cover), so there are no
-     black bars. The 3:2 canvas covers a wider-than-3:2 phone by scaling to width
-     and cropping a sliver off top/bottom; on a shorter phone it scales to height.
-     (Portrait is handled by the rotate-to-landscape cover, so the game only ever
-     renders in landscape.) */
-  @media (min-aspect-ratio:1/1) and (max-height:560px){
-    .frame{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;max-width:none}
-    #game,#loadsky{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-      width:auto;height:auto;min-width:100%;min-height:100%;max-width:none}
-  }
   /* ===== FULL-SCREEN LOADING SCREEN ===== */
   .loader{position:absolute;inset:0;z-index:30;overflow:hidden;
     transition:opacity .55s ease}
@@ -1723,7 +1713,38 @@ renderBoard();
 
 // ---- game ----
 const cv=$('game'),ctx=cv.getContext('2d');
-const W=CFG.WORLD_W,H=CFG.WORLD_H,GROUND=CFG.GROUND_Y;
+// W is dynamic: the world WIDTH follows the screen's aspect ratio so the canvas
+// matches the screen exactly (no black bars, no crop). HEIGHT stays 600 so bird
+// physics, gravity and gap sizes feel identical everywhere — only how much
+// horizontal sky you see changes. GROUND stays a fixed offset from the bottom.
+let W=CFG.WORLD_W, H=CFG.WORLD_H, GROUND=CFG.GROUND_Y;
+const GROUND_GAP = CFG.WORLD_H - CFG.GROUND_Y;   // 600-545 = 55px ground band
+// recompute the world size to match the on-screen stage's aspect ratio
+function fitCanvasToScreen(){
+  const stage = document.querySelector('.stagewrap');
+  if(!stage) return;
+  const sw = stage.clientWidth || window.innerWidth;
+  const sh = stage.clientHeight || window.innerHeight;
+  if(sw<=0||sh<=0) return;
+  H = CFG.WORLD_H;                       // lock height (keeps physics constant)
+  W = Math.round(H * (sw/sh));           // width matches the screen's ratio
+  // keep a sane minimum width so the bird (x=200) + a bit of lead space fit
+  if(W < 480) W = 480;
+  GROUND = H - GROUND_GAP;               // ground sits the same distance off the bottom
+  // size the canvas BITMAPS to the new world (crisp, no CSS stretching needed)
+  cv.width = W; cv.height = H;
+  const sky=$('loadsky'); if(sky){ sky.width=W; sky.height=H; }
+}
+fitCanvasToScreen();   // size to the screen immediately
+// re-fit on resize / rotation; redraw so it updates live
+let _fitRAF=0;
+function onResize(){
+  fitCanvasToScreen();
+  if(_fitRAF) cancelAnimationFrame(_fitRAF);
+  _fitRAF=requestAnimationFrame(()=>{ try{ if(typeof draw==='function') draw(); }catch(e){} });
+}
+window.addEventListener('resize', onResize);
+window.addEventListener('orientationchange', ()=>{ setTimeout(onResize,200); });
 let state='idle',birdY,birdV,score,tick,nextSpawn,pipes,acc,lastT;
 
 // ---- VERSUS (1v1) state + seeded RNG ----
