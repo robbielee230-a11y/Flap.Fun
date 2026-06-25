@@ -628,8 +628,8 @@ const BLAST = {
            color:'#7adfff', label:'LASER' },
   flame: { range: 520,  // long blazing flamethrower cone ahead of the dragon
            color:'#ff7a1a', label:'FLAME' },
-  ALLOW_IN_COMP: false,
-  ALLOW_IN_VS: false,
+  ALLOW_IN_COMP: true,   // high-score board: abilities ENABLED
+  ALLOW_IN_VS: true,     // 1v1: abilities ENABLED
 };
 // does the equipped character have a usable ability in the CURRENT mode?
 function curAbility(){
@@ -1006,6 +1006,95 @@ const CHARACTERS = {
     g.addColorStop(0,'rgba(255,230,150,0.9)');g.addColorStop(0.5,'rgba(255,120,30,0.6)');g.addColorStop(1,'rgba(255,50,20,0)');
     c.fillStyle=g;c.beginPath();c.arc(fx+9+f3,-2.5+f2*0.5,3.8,0,Math.PI*2);c.fill();
     c.globalCompositeOperation='source-over';
+  }},
+
+  emberling: { name:'Emberling', ability:'flame', body(c,P,up,t){
+    // chunky CUTE baby dragon — volcanic black body with glowing ember cracks.
+    // Big round head, big eyes, stubby wings, little flame puff from the mouth.
+    const O='#0c0a0f';                       // near-black outline
+    const bodyC='#231f28';                   // volcanic charcoal body
+    const bodyHi='#34303c';                  // subtle top sheen
+    const ember='#ff6a1a';                   // ember-glow accents
+    const emberHot='#ffd23f';                // hottest cracks
+    const belly='#3a3340';                   // dark slate belly
+    const wob=Math.sin((t||0)/90)*1.5, flick=Math.sin((t||0)/60)*2, glow=0.6+0.4*Math.sin((t||0)/180);
+
+    // ---- stubby tail with a small ember tip ----
+    c.strokeStyle=O;c.lineWidth=8;c.lineCap='round';
+    c.beginPath();c.moveTo(-7,7);c.quadraticCurveTo(-17,11,-19,5);c.stroke();
+    c.strokeStyle=bodyC;c.lineWidth=5;
+    c.beginPath();c.moveTo(-7,7);c.quadraticCurveTo(-16,10,-18,5);c.stroke();c.lineWidth=1;
+    // little ember at the tail tip (glows)
+    c.save();c.globalCompositeOperation='lighter';c.shadowColor=ember;c.shadowBlur=8*glow;
+    c.fillStyle=emberHot;c.beginPath();c.arc(-19+flick*0.4,4,2.2,0,Math.PI*2);c.fill();c.restore();
+
+    // ---- stubby rounded wings (behind body), flap with input ----
+    const wy=up?-16:-7;
+    c.fillStyle=O;
+    c.beginPath();c.moveTo(-5,-3);c.quadraticCurveTo(-20,wy,-16,wy+9);
+    c.quadraticCurveTo(-19,wy+13,-13,wy+13);c.quadraticCurveTo(-15,wy+18,-6,7);c.closePath();c.fill();
+    c.fillStyle='#2c2733';
+    c.beginPath();c.moveTo(-5,-2);c.quadraticCurveTo(-17,wy+2,-14,wy+9);
+    c.quadraticCurveTo(-16,wy+12,-11,wy+12);c.quadraticCurveTo(-13,wy+16,-5,6);c.closePath();c.fill();
+    // ember veins in the wing
+    c.strokeStyle=ember;c.lineWidth=1;c.globalAlpha=0.8*glow;
+    c.beginPath();c.moveTo(-6,0);c.lineTo(-15,wy+5);c.moveTo(-6,2);c.lineTo(-13,wy+10);c.stroke();
+    c.globalAlpha=1;
+
+    // ---- big round chunky body ----
+    c.fillStyle=O;rr(c,-12,-10,26,25,12);c.fill();
+    c.fillStyle=bodyC;rr(c,-10,-8,22,21,10);c.fill();
+    c.fillStyle=bodyHi;rr(c,-9,-7,11,8,5);c.fill();
+    // dark belly plate
+    c.fillStyle=belly;rr(c,-7,2,16,10,5);c.fill();
+    // glowing ember cracks across the body (lava-rock look)
+    c.save();c.globalCompositeOperation='lighter';c.strokeStyle=ember;c.lineWidth=1.4;
+    c.shadowColor=ember;c.shadowBlur=6*glow;c.globalAlpha=glow;
+    c.beginPath();c.moveTo(-8,-2);c.lineTo(-4,1);c.lineTo(-6,4);
+    c.moveTo(6,-4);c.lineTo(3,0);c.lineTo(7,2);
+    c.moveTo(-2,6);c.lineTo(2,8);c.stroke();
+    c.fillStyle=emberHot;c.beginPath();c.arc(-4,1,1,0,Math.PI*2);c.arc(3,0,1,0,Math.PI*2);c.fill();
+    c.restore();
+    // little rounded dorsal nubs (cute, not spiky)
+    c.fillStyle='#1a1620';
+    for(const[sx,h] of [[-6,4],[-1,5],[4,4]]){c.beginPath();c.moveTo(sx,-7);c.quadraticCurveTo(sx+1.5,-7-h,sx+3,-7);c.closePath();c.fill();}
+
+    // ---- BIG round cute head ----
+    c.fillStyle=O;rr(c,2,-15,16,16,8);c.fill();
+    c.fillStyle=bodyC;rr(c,3,-14,14,14,7);c.fill();
+    c.fillStyle=bodyHi;rr(c,4,-13,7,5,3);c.fill();
+    // two little rounded horns (cute stubs)
+    c.fillStyle='#e8dcc0';c.strokeStyle=O;c.lineWidth=1;
+    c.beginPath();c.moveTo(6,-14);c.quadraticCurveTo(4,-20,8,-19);c.quadraticCurveTo(7,-16,8,-14);c.closePath();c.fill();c.stroke();
+    c.beginPath();c.moveTo(12,-14);c.quadraticCurveTo(14,-20,17,-18);c.quadraticCurveTo(14,-15,15,-14);c.closePath();c.fill();c.stroke();
+    c.lineWidth=1;
+    // little snout
+    c.fillStyle=O;rr(c,13,-8,9,6,3);c.fill();
+    c.fillStyle=bodyC;rr(c,13,-8,8,5,2);c.fill();
+    // nostril
+    c.fillStyle='#0a0810';c.beginPath();c.arc(20,-5,0.9,0,Math.PI*2);c.fill();
+
+    // ---- BIG cute eyes (big = baby/cute) ----
+    c.fillStyle='#fffaf0';
+    c.beginPath();c.arc(8,-7,3.4,0,Math.PI*2);c.fill();
+    c.beginPath();c.arc(14,-7,3,0,Math.PI*2);c.fill();
+    // glowing ember pupils
+    c.save();c.shadowColor=ember;c.shadowBlur=6*glow;c.fillStyle=ember;
+    c.beginPath();c.arc(8.6,-6.6,1.9,0,Math.PI*2);c.fill();
+    c.beginPath();c.arc(14.4,-6.6,1.7,0,Math.PI*2);c.fill();c.restore();
+    // shine dots
+    c.fillStyle='#fff';c.beginPath();c.arc(7.6,-7.6,0.8,0,Math.PI*2);c.arc(13.6,-7.6,0.7,0,Math.PI*2);c.fill();
+
+    // ---- little flame puff from the mouth (idle) ----
+    c.save();c.globalCompositeOperation='lighter';
+    const fx=22+wob*0.3;
+    let g=c.createRadialGradient(fx,-3,0,fx,-3,7);
+    g.addColorStop(0,'rgba(255,255,210,0.9)');g.addColorStop(0.4,'rgba(255,150,40,0.7)');g.addColorStop(1,'rgba(255,60,20,0)');
+    c.fillStyle=g;c.beginPath();c.arc(fx+flick*0.4,-3,5,0,Math.PI*2);c.fill();
+    g=c.createRadialGradient(fx+7,-3,0,fx+7,-3,4);
+    g.addColorStop(0,'rgba(255,230,150,0.85)');g.addColorStop(0.5,'rgba(255,110,30,0.5)');g.addColorStop(1,'rgba(255,50,20,0)');
+    c.fillStyle=g;c.beginPath();c.arc(fx+7+flick,-3,3,0,Math.PI*2);c.fill();
+    c.restore();
   }},
 
   sub: { name:'Lil Sub', req:'t4', flight:'submarine', body(c,P,up,t){
@@ -2009,6 +2098,30 @@ const CHAR_FX = {
       }
       // a quick muzzle flash
       P({x:x+12, y, vx:-1, vy:0, life:1, decay:0.16, r:10, kind:'flame'});
+    }
+  },
+
+  emberling: {
+    sound(){
+      // a cute little baby-dragon fire puff: small chirpy roar + soft whoosh
+      tone(180,0.18,'sawtooth',0.4,90,0.01);
+      tone(260,0.14,'square',0.22,150,0.015);
+      noise(0.2,0.3,'lowpass',1200,1,400);
+      setTimeout(()=>tone(340,0.1,'sine',0.2,520),50);
+    },
+    emit(x,y){
+      // a small warm gout of fire + glowing embers
+      for(let i=0;i<10;i++){
+        const u=Math.random();
+        P({x:x+10-u*5, y:y+rnd(-3,4), vx:rnd(-3.5,-1)-u*1.5, vy:rnd(-1,1),
+          life:1, decay:rnd(0.05,0.09), r:rnd(3,6)*(1-u*0.4), kind:'flame'});
+      }
+      for(let i=0;i<6;i++){
+        const c=['#fff1a0','#ffd23f','#ff9a30','#ff6a1a'][(Math.random()*4)|0];
+        P({x:x+6, y:y+rnd(-3,5), vx:rnd(-4,-1), vy:rnd(-1.5,1),
+          life:1, decay:rnd(0.025,0.05), r:rnd(1,2), c, kind:'ember'});
+      }
+      P({x:x+11, y, vx:-1, vy:0, life:1, decay:0.18, r:7, kind:'flame'});
     }
   },
 
@@ -3329,6 +3442,13 @@ const TOKEN = {
 let SIM_BALANCE = 0;
 try{ const s=parseFloat(localStorage.getItem('flappy_simbal')||'0'); if(!isNaN(s)) SIM_BALANCE=s; }catch(e){}
 
+// DEV TESTING: when true, the sim slider is shown even with the server connected,
+// and unlocks are decided by the SLIDER (sim balance) instead of the server. This
+// is LOCAL ONLY — it never touches the real server or other players. Set to false
+// before a real release so the server's verified balance controls unlocks.
+let DEV_UNLOCKS = false;
+try{ const d=localStorage.getItem('flappy_devunlocks'); if(d==='0') DEV_UNLOCKS=false; if(d==='1') DEV_UNLOCKS=true; }catch(e){}
+
 // the wallet's current holding of the coin (whole tokens). null = unknown yet.
 let TOKEN_BALANCE = null;
 
@@ -3441,6 +3561,11 @@ function isUnlocked(item, id){
   if(FREE_PLAY) return true;                     // everything unlocked for play/testing
   const gated = !!(item.rank) || reqAmount(item)>0;
   if(!gated) return true;                       // free items always unlocked
+  // DEV TESTING: slider drives unlocks locally (rank items always unlocked in dev)
+  if(DEV_UNLOCKS){
+    if(item.rank) return true;
+    return SIM_BALANCE >= reqAmount(item);
+  }
   if(SERVER_UNLOCKS){                            // server decides for gated items
     return id ? SERVER_UNLOCKS.has(id) : false;
   }
