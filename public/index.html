@@ -68,11 +68,12 @@
   @media (max-aspect-ratio:3/2){ .frame{width:100%;height:auto} }
   #game,#loadsky{position:absolute;inset:0;width:100%;height:100%;display:block}
   canvas{display:block}
-  /* PORTRAIT phones: fill the whole stage width so there are no black side bars.
-     The canvas WIDTH fills the screen; being 3:2 it's shorter than a tall screen,
-     but we scale it up to cover height too and crop a little off top/bottom (sky +
-     ground edges), keeping the full horizontal course and the bird fully visible. */
-  @media (max-aspect-ratio:3/2) and (max-width:760px){
+  /* LANDSCAPE phones: fill the whole stage with the game (cover), so there are no
+     black bars. The 3:2 canvas covers a wider-than-3:2 phone by scaling to width
+     and cropping a sliver off top/bottom; on a shorter phone it scales to height.
+     (Portrait is handled by the rotate-to-landscape cover, so the game only ever
+     renders in landscape.) */
+  @media (min-aspect-ratio:1/1) and (max-height:560px){
     .frame{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;max-width:none}
     #game,#loadsky{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
       width:auto;height:auto;min-width:100%;min-height:100%;max-width:none}
@@ -305,9 +306,32 @@
   .vs-fighter .tag{font-size:11px;font-weight:700;letter-spacing:.5px}
   .vs-fighter.me .tag{color:#3ddc84} .vs-fighter.opp .tag{color:#ff5a4d}
   .vs-vsbadge{font-family:"Bungee",sans-serif;font-size:34px;color:var(--sig);text-shadow:0 2px 0 #3a2a00,0 0 18px #ffd23f88}
+  /* ===== ROTATE-TO-LANDSCAPE COVER (mobile portrait) ===== */
+  #rotateCover{position:fixed;inset:0;z-index:9999;display:none;
+    background:radial-gradient(circle at 50% 40%,#141d2b,#070b11);
+    color:#fff;flex-direction:column;align-items:center;justify-content:center;
+    gap:22px;text-align:center;padding:32px;font-family:"Space Grotesk",sans-serif}
+  #rotateCover .phone{width:64px;height:108px;border:4px solid #ffd23f;border-radius:14px;
+    position:relative;animation:rotateHint 2.2s ease-in-out infinite;transform-origin:50% 50%}
+  #rotateCover .phone::after{content:"";position:absolute;left:50%;bottom:7px;transform:translateX(-50%);
+    width:22px;height:3px;border-radius:2px;background:#ffd23f}
+  @keyframes rotateHint{0%,30%{transform:rotate(0deg)}60%,100%{transform:rotate(-90deg)}}
+  #rotateCover .rtitle{font-size:22px;font-weight:700;color:#ffd23f;letter-spacing:.5px}
+  #rotateCover .rsub{font-size:14px;color:#aeb8c6;max-width:280px;line-height:1.5}
+  /* show the cover only on phones held in portrait */
+  @media (max-aspect-ratio:1/1) and (max-width:900px){
+    body.mobile #rotateCover{display:flex}
+    body.mobile .topbar,body.mobile .stagewrap,body.mobile .sandbox-banner{visibility:hidden}
+  }
 </style>
 </head>
 <body>
+  <!-- shown on phones held in portrait: asks to rotate to landscape -->
+  <div id="rotateCover">
+    <div class="phone"></div>
+    <div class="rtitle">Rotate your phone</div>
+    <div class="rsub">FLAPPY plays in landscape. Turn your device sideways to start flying.</div>
+  </div>
   <div class="sandbox-banner">🛠 SANDBOX — runs offline, no server. Scores save locally only. Search "TWEAK ZONE" in the code to edit.</div>
 
   <!-- TOP TAB BAR -->
@@ -3746,6 +3770,28 @@ const LTIPS = ['warming up the wings…','painting the clouds…','rounding up t
 resetFX();
 pipes=pipes||[];   // ensure iterable before the first idle-lobby draw
 
+// ===== MOBILE: landscape-only =====
+// Mark phones so the rotate-to-landscape cover can show in portrait, and TRY a
+// real orientation lock (works on some Android/Chrome once fullscreen; iOS Safari
+// ignores it, so the rotate cover is the reliable fallback there).
+(function landscapeOnly(){
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent)
+                   || (('ontouchstart' in window) && Math.min(screen.width,screen.height)<820);
+  if(isMobile) document.body.classList.add('mobile');
+  // attempt the hard lock (best-effort; silently ignored where unsupported)
+  async function tryLock(){
+    try{
+      if(screen.orientation && screen.orientation.lock){
+        await screen.orientation.lock('landscape');
+      }
+    }catch(e){ /* not allowed (needs fullscreen / iOS) — rotate cover handles it */ }
+  }
+  // browsers only allow the lock after a user gesture &/or fullscreen; try on first tap
+  window.addEventListener('pointerdown', function once(){
+    tryLock();
+    window.removeEventListener('pointerdown', once);
+  }, {once:true});
+})();
 
 </script>
 </body>
