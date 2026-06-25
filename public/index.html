@@ -1785,8 +1785,8 @@ function resetFX(){ particles=[]; trail=[]; shake=0; flashT=0; scorePulse=0; wor
 
 function startRun(){
   if(state==='countdown'||state==='playing') return;   // already starting/running
-  // competitive requires a connected wallet — defence in depth
-  if(mode==='competitive' && !walletConnected()){
+  // competitive requires proven wallet ownership (connected wallet or signed-in session)
+  if(mode==='competitive' && !(walletConnected() || SESSION)){
     mode='casual'; try{localStorage.setItem('flappy_mode',mode);}catch(e){}
     applyMode();
     connectWallet();   // nudge them to connect; they can re-pick competitive after
@@ -2990,7 +2990,7 @@ async function serverSignIn(){
     const sigBytes=sig.signature||sig;     // Phantom returns {signature:Uint8Array}
     const v=await fetch(API+'/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({wallet:WALLET.pubkey, signature:bs58enc(sigBytes), nonce:n.nonce})}).then(r=>r.json());
-    if(v.session){ SESSION=v.session; await refreshHoldings(); }
+    if(v.session){ SESSION=v.session; if(typeof applyMode==='function') applyMode(); await refreshHoldings(); }
     else { console.warn('sign-in rejected:', v && (v.error||v.reason||JSON.stringify(v))); }
   }catch(e){ console.warn('server sign-in failed',e); }
   finally{ _signingIn=false; }
@@ -3347,7 +3347,7 @@ function rankOnTrack(item){
 // FREE_PLAY: when true, EVERY character/skin/hat/costume is pickable (no locks).
 // Competitive scores are still server-verified, so this only affects what you can
 // equip/test — it can't fake leaderboard rank or token holdings on the server.
-const FREE_PLAY = true;
+const FREE_PLAY = false;
 function isUnlocked(item, id){
   if(!item) return true;
   if(FREE_PLAY) return true;                     // everything unlocked for play/testing
@@ -3412,11 +3412,13 @@ function updateHoldingsUI(){
 
 /* ---------- mode toggle + play panel ---------- */
 function applyMode(){
-  // competitive requires a connected wallet — reflect lock state on the card
+  // competitive needs proven wallet ownership: a connected wallet OR an active
+  // server session (signed in) both count.
+  const authed = walletConnected() || !!SESSION;
   const compCard=document.querySelector('.mode-card.comp');
-  if(compCard) compCard.classList.toggle('locked', !walletConnected());
-  // if competitive got selected but wallet later disconnected, fall back to casual
-  if(mode==='competitive' && !walletConnected()){ mode='casual'; try{localStorage.setItem('flappy_mode',mode);}catch(e){} }
+  if(compCard) compCard.classList.toggle('locked', !authed);
+  // if competitive got selected but auth was lost, fall back to casual
+  if(mode==='competitive' && !authed){ mode='casual'; try{localStorage.setItem('flappy_mode',mode);}catch(e){} }
   // visual state of the mode cards
   document.querySelectorAll('.mode-card').forEach(c=>{
     c.classList.toggle('sel', c.dataset.mode===mode);
@@ -3445,6 +3447,7 @@ function togglePanel(force){
   const open = force!==undefined ? force : !panel.classList.contains('open');
   panel.classList.toggle('open',open);
   arrow.classList.toggle('open',open);
+  if(open) applyMode();   // ensure the competitive lock reflects current wallet state
   if(SOUND.enabled) beep(open?620:440,0.05,'triangle',0.4);
 }
 $('qpArrow').addEventListener('click',e=>{ e.stopPropagation(); togglePanel(); });
