@@ -13,6 +13,8 @@
 //                  opp{y,vy,rot,score,alive}, result{youWon,you,opp}, oppLeft
 import crypto from 'crypto';
 import { WebSocketServer } from 'ws';
+import { verifySessionToken } from './auth.js';
+import { recordVsWin } from './leaderboard.js';
 
 const QUEUE = [];            // sockets waiting for a match
 const MATCHES = new Map();   // matchId -> match
@@ -23,6 +25,14 @@ function send(ws, obj) {
   }
 }
 
+// broadcast live online + queue counts to every connected client
+function broadcastStats(wss) {
+  let online = 0;
+  wss.clients.forEach((c) => { if (c.readyState === c.OPEN) online++; });
+  const payload = JSON.stringify({ t: 'stats', online, queue: QUEUE.length });
+  wss.clients.forEach((c) => { if (c.readyState === c.OPEN) { try { c.send(payload); } catch {} } });
+}
+
 function makeMatch(a, b) {
   const id = crypto.randomBytes(8).toString('hex');
   // 32-bit seed both clients use to generate identical pipes
@@ -30,8 +40,8 @@ function makeMatch(a, b) {
   const match = {
     id, seed,
     players: [
-      { ws: a, name: a._name, character: a._character, ready: false, alive: true, score: 0 },
-      { ws: b, name: b._name, character: b._character, ready: false, alive: true, score: 0 },
+      { ws: a, name: a._name, character: a._character, wallet: a._wallet || null, ready: false, alive: true, score: 0 },
+      { ws: b, name: b._name, character: b._character, wallet: b._wallet || null, ready: false, alive: true, score: 0 },
     ],
     started: false, ended: false, countdownStarted: false,
   };
@@ -84,8 +94,21 @@ function endMatch(match, reason) {
   if (reason === 'left0') win0 = false;
   else if (reason === 'left1') win0 = true;
   else win0 = p0.score >= p1.score;
-  send(p0.ws, { t: 'result', youWon: win0, you: p0.score, opp: p1.score, reason });
-  send(p1.ws, { t: 'result', youWon: !win0, you: p1.score, opp: p0.score, reason });
+  const winner = win0 ? p0 : p1;
+  const recorded = !!(winner && winner.wallet);
+  send(p0.ws, { t: 'result', youWon: win0, you: p0.score, opp: p1.score, reason, counted: win0 && recorded });
+  send(p1.ws, { t: 'result', youWon: !win0, you: p1.score, opp: p0.score, reason, counted: !win0 && recorded });
+  // record the win for the prize leaderboard — only if the winner is a verified
+  // (signed-in) wallet. Anonymous wins don't count.
+  if (recorded) {
+    console.log('[vs_wins] recording win for', winner.wallet, '(', winner.name, ')');
+    recordVsWin({ wallet: winner.wallet, name: winner.name })
+      .then(() => console.log('[vs_wins] recorded OK for', winner.wallet))
+      .catch(e => console.warn('[vs_wins] record FAILED:', e.message));
+  } else {
+    console.log('[vs_wins] win NOT counted — winner has no verified wallet. p0.wallet=',
+      p0.wallet, 'p1.wallet=', p1.wallet, 'reason=', reason);
+  }
   MATCHES.delete(match.id);
 }
 
@@ -102,6 +125,7 @@ export function attachMultiplayer(httpServer) {
     ws._character = 'bird';
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
+    broadcastStats(wss);   // someone joined → update everyone's counts
 
     ws.on('message', (raw) => {
       let msg; try { msg = JSON.parse(raw.toString()); } catch { return; }
@@ -111,11 +135,16 @@ export function attachMultiplayer(httpServer) {
         case 'hello': {
           ws._name = String(msg.name || 'Player').slice(0, 14);
           ws._character = String(msg.character || 'bird').slice(0, 24);
+          // if they sent a session token, verify it so wins can be attributed to
+          // their real wallet. Anonymous players can still play, but their wins
+          // won't count toward the prize leaderboard.
+          ws._wallet = msg.session ? verifySessionToken(msg.session) : null;
           // join the matchmaking queue
           if (!QUEUE.includes(ws) && !ws._matchId) {
             QUEUE.push(ws);
             send(ws, { t: 'queued', position: QUEUE.length });
             tryMatchmake();
+            broadcastStats(wss);   // queue changed
           }
           break;
         }
@@ -180,6 +209,7 @@ export function attachMultiplayer(httpServer) {
       endMatch(match, ws._side === 0 ? 'left0' : 'left1');
     }
     ws._matchId = null;
+    broadcastStats(wss);   // someone left → update counts
   }
 
   console.log('[mp] multiplayer WebSocket server attached at /ws');
