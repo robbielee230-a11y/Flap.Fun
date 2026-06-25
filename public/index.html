@@ -278,6 +278,9 @@
   .vs-screen.show{display:flex}
   .vs-big{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:34px;color:#fff;text-shadow:0 2px 12px #000}
   .vs-sub{font-size:14px;color:var(--mute)}
+  .vs-note{font-size:13px;margin:8px 0;padding:7px 12px;border-radius:8px;font-weight:600}
+  .vs-note.ok{background:rgba(61,220,132,0.15);color:#3ddc84}
+  .vs-note.warn{background:rgba(255,180,60,0.15);color:#ffce3e}
   .vs-count{font-family:"Bungee",sans-serif;font-size:96px;color:var(--sig);
     text-shadow:0 4px 0 #3a2a00,0 0 30px #ffd23f88;animation:vsPop .8s ease}
   @keyframes vsPop{0%{transform:scale(.4);opacity:0}40%{transform:scale(1.15);opacity:1}100%{transform:scale(1)}}
@@ -342,7 +345,8 @@
     </div>
     <button class="tab active" data-tab="lobby"><span class="ic">🏠</span><span class="label">Home</span></button>
     <button class="tab" data-tab="shop"><span class="ic">🛍️</span><span class="label">Item Shop</span></button>
-    <button class="tab" data-tab="board"><span class="ic">🏆</span><span class="label">Leaderboard</span></button>
+    <button class="tab" data-tab="board"><span class="ic">🏆</span><span class="label">High Scores</span></button>
+    <button class="tab" data-tab="wins"><span class="ic">⚔️</span><span class="label">1v1 Wins</span></button>
     <button class="tab vs-tab" id="vsTab"><span class="ic">⚔️</span><span class="label">1v1</span></button>
     <button class="tab" data-tab="settings"><span class="ic">⚙️</span><span class="label">Settings</span></button>
     <div class="spacer"></div>
@@ -427,14 +431,20 @@
       <div class="panel" id="panel-board">
         <div class="panel-card">
           <span class="panel-close" data-close>✕</span>
-          <h3>🏆 Leaderboard</h3>
-          <div class="lb-toggle">
-            <button class="lb-tab sel" id="lbTabScore" data-board="score">High Score</button>
-            <button class="lb-tab" id="lbTabWins" data-board="wins">Most 1v1 Wins</button>
-          </div>
-          <div class="sub" id="boardSub">Daily board · resets every 24h</div>
+          <h3>🏆 High Score Leaderboard</h3>
+          <div class="sub" id="boardSub">Daily high score · resets every 24h</div>
           <table id="board"></table>
-          <div class="note" id="boardNote">24-hour seasons. Free to enter — anyone can compete. Top finishers each day are eligible for prizes (awarded by the team). Casual runs aren't recorded.</div>
+          <div class="note" id="boardNote">Hold the entry threshold of FLAP to compete. Resets every 24h. Top daily finishers earn <b>exclusive character skins</b>. Casual runs aren't recorded.</div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-wins">
+        <div class="panel-card">
+          <span class="panel-close" data-close>✕</span>
+          <h3>⚔️ 1v1 Wins Leaderboard</h3>
+          <div class="sub" id="winsSub">Daily 1v1 wins · resets every 24h</div>
+          <table id="winsboard"></table>
+          <div class="note">Free to enter — anyone signed in can compete. Resets every 24h. Top daily winners are eligible for <b>Solana (SOL) prizes</b>, awarded by the team. Sign in with your wallet so your wins count.</div>
         </div>
       </div>
 
@@ -1720,25 +1730,9 @@ function saveScore(name,score){
   if(me){ if(score>me.score) me.score=score; } else b.push({name,score});
   localStorage.setItem(roundKey(),JSON.stringify(b)); renderBoard();
 }
-let LB_MODE='score';            // 'score' or 'wins'
 let WINS_BOARD=null;            // last fetched wins board
 function renderBoard(){
   const sub=$('boardSub');
-  if(LB_MODE==='wins'){
-    // ---- 1v1 WINS board ----
-    if(API && WINS_BOARD && Array.isArray(WINS_BOARD.board)){
-      const rem=WINS_BOARD.remainingMs||0;
-      const h=Math.floor(rem/3600000), m=Math.floor((rem%3600000)/60000);
-      if(sub) sub.textContent='Daily 1v1 wins · resets in '+(h>0?h+'h '+m+'m':m+'m');
-      const rows=WINS_BOARD.board.slice(0,10);
-      if(!rows.length){ $('board').innerHTML='<tr><td colspan="3" style="color:var(--mute);text-align:center;padding:14px">No wins yet — play a 1v1 (signed in) to get on the board</td></tr>'; return; }
-      $('board').innerHTML=rows.map(r=>`<tr class="${r.rank===1?'lead-1':''}"><td class="rank">${r.rank}</td><td class="who">${escapeHtml(r.name)}</td><td class="sc">${r.wins} ${r.wins===1?'win':'wins'}</td></tr>`).join('');
-    } else {
-      if(sub) sub.textContent='Daily 1v1 wins · sign in & play 1v1 to compete';
-      $('board').innerHTML='<tr><td colspan="3" style="color:var(--mute);text-align:center;padding:14px">'+(API?'No wins recorded yet':'Online board needs the backend')+'</td></tr>';
-    }
-    return;
-  }
   // ---- HIGH SCORE board (server) ----
   if(API && SERVER_BOARD && Array.isArray(SERVER_BOARD.board)){
     const rem=SERVER_BOARD.remainingMs||0;
@@ -1752,9 +1746,23 @@ function renderBoard(){
   }
   // LOCAL/OFFLINE MODE (high score only)
   const rows=loadBoard().sort((a,b)=>b.score-a.score).slice(0,10);
-  if(sub) sub.textContent='Season ends in '+seasonRemaining()+' · top finishers earn prizes';
+  if(sub) sub.textContent='Season ends in '+seasonRemaining()+' · top finishers earn skins';
   if(!rows.length){ $('board').innerHTML='<tr><td colspan="3" style="color:var(--mute);text-align:center;padding:14px">No scores yet — play a competitive round</td></tr>'; return; }
   $('board').innerHTML=rows.map((r,i)=>`<tr class="${i===0?'lead-1':''}"><td class="rank">${i+1}</td><td class="who ${r.name===myName?'me':''}">${r.name===myName?escapeHtml(r.name)+' (you)':escapeHtml(r.name)}</td><td class="sc">${r.score}</td></tr>`).join('');
+}
+function renderWinsBoard(){
+  const sub=$('winsSub');
+  if(API && WINS_BOARD && Array.isArray(WINS_BOARD.board)){
+    const rem=WINS_BOARD.remainingMs||0;
+    const h=Math.floor(rem/3600000), m=Math.floor((rem%3600000)/60000);
+    if(sub) sub.textContent='Daily 1v1 wins · resets in '+(h>0?h+'h '+m+'m':m+'m');
+    const rows=WINS_BOARD.board.slice(0,10);
+    if(!rows.length){ $('winsboard').innerHTML='<tr><td colspan="3" style="color:var(--mute);text-align:center;padding:14px">No wins yet — play a 1v1 (signed in) to get on the board</td></tr>'; return; }
+    $('winsboard').innerHTML=rows.map(r=>`<tr class="${r.rank===1?'lead-1':''}"><td class="rank">${r.rank}</td><td class="who">${escapeHtml(r.name)}</td><td class="sc">${r.wins} ${r.wins===1?'win':'wins'}</td></tr>`).join('');
+  } else {
+    if(sub) sub.textContent='Daily 1v1 wins · sign in & play 1v1 to compete';
+    $('winsboard').innerHTML='<tr><td colspan="3" style="color:var(--mute);text-align:center;padding:14px">'+(API?'No wins recorded yet':'Online board needs the backend')+'</td></tr>';
+  }
 }
 renderBoard();
 
@@ -2674,8 +2682,13 @@ function drawSharedOpponent(){
   ctx.translate(ox, oy);
   ctx.rotate(oppState.rot||0);
   ctx.scale(1.4,1.4);
+  const op = VS.opponent || {};
+  const oppPal = COLORS_LIB[op.color] || COLORS_LIB.classic;   // opponent's own colour
   drawBirdSprite(ctx,{clock:animClock, flapUp:Math.floor(animClock/120)%2===0,
-    character:(VS.opponent&&VS.opponent.character)||'bird'});
+    character: op.character || 'bird',
+    palette: oppPal,
+    hat: op.hat!==undefined ? op.hat : 'none',
+    costume: op.costume!==undefined ? op.costume : 'none'});
   ctx.restore();
   // name tag + crash marker above the opponent
   ctx.save();
@@ -3056,9 +3069,13 @@ async function loadWinsBoard(){
 async function submitServerScore(score,durationMs,flight){
   if(!serverActive()) return null;
   try{
-    return await fetch(API+'/scores',{method:'POST',
+    const r=await fetch(API+'/scores',{method:'POST',
       headers:{'Content-Type':'application/json',Authorization:'Bearer '+SESSION},
       body:JSON.stringify({name:myName,score,durationMs,flight})}).then(r=>r.json());
+    if(r && r.reason==='below_threshold'){
+      vsToast('Hold '+fmtBal(r.need)+' FLAP to rank on the High Score board (you have '+fmtBal(r.have||0)+').');
+    }
+    return r;
   }catch(e){ console.warn('score submit failed',e); return null; }
 }
 // ===== END TWEAK ZONE 12 =====
@@ -3112,7 +3129,9 @@ function vsFindMatch(){
     VSWS=new WebSocket(wsURL());
   }catch(e){ vsSetScreen('error','Could not connect.'); return; }
   VSWS.onopen=()=>{
-    VSWS.send(JSON.stringify({t:'hello', name:myName, character:LOADOUT.character, session:SESSION||null}));
+    VSWS.send(JSON.stringify({t:'hello', name:myName,
+      character:LOADOUT.character, color:LOADOUT.color, hat:LOADOUT.hat, costume:LOADOUT.costume,
+      session:SESSION||null}));
   };
   VSWS.onmessage=(ev)=>{
     let m; try{ m=JSON.parse(ev.data); }catch{ return; }
@@ -3155,7 +3174,7 @@ function handleVSMessage(m){
     case 'oppLeft': vsToast('Opponent left — you win!'); break;
     case 'result':
       if(VS) VS.ended=true;
-      showVSResult(m.youWon, m.you, m.opp);
+      showVSResult(m.youWon, m.you, m.opp, m.counted);
       break;
   }
 }
@@ -3224,8 +3243,9 @@ function vsSetScreen(kind,text){
       '</div>'+
       '<div class="vs-sub">Get ready…</div>';
     el.innerHTML=html;
-    drawAvatar($('vsAvMe'), myChar);
-    drawAvatar($('vsAvOpp'), oppChar);
+    drawAvatar($('vsAvMe'), { character:myChar, palette:curPalette(), hat:LOADOUT.hat, costume:LOADOUT.costume });
+    const op=(VS&&VS.opponent)||{};
+    drawAvatar($('vsAvOpp'), { character:oppChar, palette:(COLORS_LIB[op.color]||COLORS_LIB.classic), hat:op.hat||'none', costume:op.costume||'none' });
     return;
   }
   else if(kind==='countdown'){ html='<div class="vs-count">'+text+'</div>'; }
@@ -3233,25 +3253,37 @@ function vsSetScreen(kind,text){
   el.innerHTML=html;
   const c=$('vsCancel'); if(c) c.addEventListener('click',vsLeave);
 }
-// draw a character sprite centered into a small avatar canvas
-function drawAvatar(canvas, charKey){
+// draw a character sprite centered into a small avatar canvas (lo = full loadout)
+function drawAvatar(canvas, lo){
   if(!canvas) return; const c=canvas.getContext('2d');
+  lo = (typeof lo==='string') ? { character:lo } : (lo||{});
   c.clearRect(0,0,canvas.width,canvas.height);
   c.save(); c.translate(canvas.width/2, canvas.height/2+6); c.scale(3.4,3.4);
-  try{ drawBirdSprite(c,{clock:performance.now(), flapUp:true, character:charKey}); }catch(e){}
+  try{ drawBirdSprite(c,{clock:performance.now(), flapUp:true,
+    character:lo.character, palette:lo.palette, hat:lo.hat, costume:lo.costume}); }catch(e){}
   c.restore();
 }
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 function vsHideScreen(){ const el=$('vsScreen'); if(el){ el.classList.remove('show'); el.innerHTML=''; } }
-function showVSResult(won,you,opp){
+function showVSResult(won,you,opp,counted){
   const el=$('vsScreen'); if(!el) return;
   el.classList.add('show');
+  // explain whether this win was recorded to the prize board
+  let note='';
+  if(won){
+    note = counted
+      ? '<div class="vs-note ok">✓ Win recorded to the daily 1v1 board</div>'
+      : '<div class="vs-note warn">⚠ Not counted — sign in with your wallet before playing to rank for prizes</div>';
+  }
   el.innerHTML='<div class="vs-big" style="color:'+(won?'#3ddc84':'#ff5a4d')+'">'+(won?'🏆 YOU WIN':'DEFEAT')+'</div>'+
     '<div class="vs-sub">You '+you+' · Opponent '+opp+'</div>'+
+    note+
     '<button class="vs-btn" id="vsAgain">Find new match</button>'+
     '<button class="vs-btn ghost" id="vsExit">Back to lobby</button>';
   $('vsAgain').addEventListener('click',()=>{ cleanupVS(); vsFindMatch(); });
   $('vsExit').addEventListener('click',vsLeave);
+  // refresh the wins board so a counted win shows up immediately
+  if(counted && typeof loadWinsBoard==='function') loadWinsBoard().then(()=>{ if(typeof renderWinsBoard==='function' && $('panel-wins') && $('panel-wins').classList.contains('open')) renderWinsBoard(); });
   state='idle'; if(MUSIC.enabled && SOUND.enabled) musStart();
 }
 function vsToast(msg){
@@ -3520,24 +3552,17 @@ $('namebox').addEventListener('input',e=>setMyName(e.target.value));
 function openTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
   // 'lobby' = no panel (just the lobby/game screen). others open a modal panel.
-  ['board','shop','settings'].forEach(p=>{
+  ['board','wins','shop','settings'].forEach(p=>{
     const el=$('panel-'+p); if(el) el.classList.toggle('open', p===name);
   });
-  if(name==='board'){ if(API){ loadServerBoard().then(renderBoard); loadWinsBoard().then(()=>{ if(LB_MODE==='wins') renderBoard(); }); } renderBoard(); }
+  if(name==='board'){ if(API){ loadServerBoard().then(renderBoard); } renderBoard(); }
+  if(name==='wins'){ if(API){ loadWinsBoard().then(renderWinsBoard); } renderWinsBoard(); }
   if(name==='shop'){ refreshHoldings(); buildShop(); updateHoldingsUI(); requestAnimationFrame(shopPreviewLoop); }
   if(SOUND.enabled){ try{audio()&&audio().resume();}catch(e){} beep(560,0.05,'triangle',0.4); }
   // lobby/menus: make sure the soundtrack is playing and at full volume
   if(name==='lobby' && MUSIC.enabled && SOUND.enabled && !MUSIC.playing){ musStart(); }
 }
 document.querySelectorAll('.tab').forEach(t=> t.addEventListener('click',()=>{ if(t.dataset.tab) openTab(t.dataset.tab); }) );
-// leaderboard board-type toggle (High Score / Most 1v1 Wins)
-document.querySelectorAll('.lb-tab').forEach(b=> b.addEventListener('click',()=>{
-  LB_MODE=b.dataset.board;
-  document.querySelectorAll('.lb-tab').forEach(x=>x.classList.toggle('sel',x===b));
-  if(API){ (LB_MODE==='wins'?loadWinsBoard():loadServerBoard()).then(renderBoard); }
-  renderBoard();
-  if(SOUND.enabled) beep(560,0.04,'triangle',0.4);
-}) );
 { const vt=$('vsTab'); if(vt) vt.addEventListener('click',()=>{ if(typeof vsFindMatch==='function') vsFindMatch(); }); }
 document.querySelectorAll('[data-close]').forEach(x=> x.addEventListener('click',()=>openTab('lobby')) );
 document.querySelectorAll('.panel').forEach(p=> p.addEventListener('click',e=>{ if(e.target===p) openTab('lobby'); }) );
@@ -3799,7 +3824,10 @@ applyMode(); syncHandle();
 finaliseSeasonIfNeeded(); computeLiveRank();   // roll over any finished season, set live standing
 refreshHoldings();   // read coin balance (sim or real) and gate the shop
 // keep the season countdown fresh while the leaderboard is open
-setInterval(()=>{ if($('panel-board') && $('panel-board').classList.contains('open')) renderBoard(); }, 60000);
+setInterval(()=>{
+  if($('panel-board') && $('panel-board').classList.contains('open')){ if(API) loadServerBoard().then(renderBoard); else renderBoard(); }
+  if($('panel-wins') && $('panel-wins').classList.contains('open')){ if(API) loadWinsBoard().then(renderWinsBoard); else renderWinsBoard(); }
+}, 60000);
 
 // ===== TWEAK ZONE 8: LOADING SCREEN =====
 // Full-screen animated sky: gradient, drifting clouds, a flock of little birds
