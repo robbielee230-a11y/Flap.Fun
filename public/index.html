@@ -1568,17 +1568,20 @@ function tone(freq, dur, type='sine', vol=1, slideTo=null, atk=0.005){
 // filtered noise burst — used for water splashes, whooshes, sizzle, sparkle
 function noise(dur, vol=1, filter='bandpass', freq=1200, q=1, slideTo=null){
   if(!SOUND.enabled) return; const a=audio(); if(!a) return;
-  const t=a.currentTime, n=Math.floor(a.sampleRate*dur);
-  const buf=a.createBuffer(1,n,a.sampleRate), d=buf.getChannelData(0);
-  for(let i=0;i<n;i++) d[i]=Math.random()*2-1;
-  const src=a.createBufferSource(); src.buffer=buf;
-  const f=a.createBiquadFilter(); f.type=filter; f.frequency.setValueAtTime(freq,t);
-  if(slideTo) f.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo),t+dur);
-  f.Q.value=q;
-  const g=a.createGain();
-  g.gain.setValueAtTime(SOUND.volume*vol,t);
-  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-  src.connect(f); f.connect(g); g.connect(a.destination); src.start(t); src.stop(t+dur);
+  const amp=SOUND.volume*vol; if(!(amp>0)) return;
+  try{
+    const t=a.currentTime, n=Math.floor(a.sampleRate*dur);
+    const buf=a.createBuffer(1,n,a.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i]=Math.random()*2-1;
+    const src=a.createBufferSource(); src.buffer=buf;
+    const f=a.createBiquadFilter(); f.type=filter; f.frequency.setValueAtTime(freq,t);
+    if(slideTo) f.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo),t+dur);
+    f.Q.value=q;
+    const g=a.createGain();
+    g.gain.setValueAtTime(amp,t);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    src.connect(f); f.connect(g); g.connect(a.destination); src.start(t); src.stop(t+dur);
+  }catch(e){}
 }
 function sFlap(){ beep(520, 0.10, 'square', 0.7, 360); }
 function sScore(){ beep(740, 0.08, 'triangle', 0.9); setTimeout(()=>beep(990,0.10,'triangle',0.9),60); }
@@ -1918,6 +1921,7 @@ let loopId=0;                        // increments each time a fresh frame-loop 
 let holding=false;                    // hold-to-thrust input state (jetpack styles)
 let runStart=0;                       // performance.now() at run start (for duration)
 let blastReadyAt=0;                   // performance.now() when the ability is next usable
+window._DBG=true;                     // TEMP: log flap/fire diagnostics to console
 let blastFx=null;                     // {x0,y0,x1,y1,t,kind} transient beam effect
 let waveDir=-1;                       // wave style: -1 up, +1 down (tap flips)
 let gravDir=1;                        // antigrav style: +1 normal, -1 inverted (tap flips)
@@ -1959,16 +1963,17 @@ function beginCountdown(){
   startLoop();
 }
 function flap(){
-  if(state!=='playing') return;
-  if(vsLocked()) return;               // headstart: P2 controls locked for 1s
+  if(state!=='playing'){ if(window._DBG) console.log('flap blocked: state=',state); return; }
+  if(vsLocked()){ if(window._DBG) console.log('flap blocked: vsLocked'); return; }
   const F=curFlight();
   // mode-based tap behaviours
   if(F.mode==='wave'){ waveDir*=-1; charFlapFX(); flapPuff(); return; }       // flip undulation direction
   if(F.mode==='antigrav'){ gravDir*=-1; charFlapFX(); flapPuff(); return; }   // flip gravity
-  if(F.input!=='tap') return;          // hold-styles thrust via holding, not taps
+  if(F.input!=='tap'){ if(window._DBG) console.log('flap blocked: input=',F.input); return; }
   if(F.accel){ birdV += F.impulse; if(F.maxUp!==undefined && birdV<F.maxUp) birdV=F.maxUp; } // momentum: add
   else { birdV=F.impulse; }            // classic: set
-  charFlapFX(); flapPuff();
+  if(window._DBG) console.log('flap OK: birdV=',birdV);
+  try{ charFlapFX(); flapPuff(); }catch(e){ console.error('flapFX error:',e); }
 }
 function flapPuff(){
   for(let i=0;i<FX.flapPuff;i++) particles.push({
@@ -3759,9 +3764,12 @@ window.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();
   if(state==='playing'){ flap(); thrustOn(); } else if(!VS && state==='idle'){ startRun(); }}});
 window.addEventListener('keyup',e=>{ if(e.code==='Space') thrustOff(); });
 // fire pipe-breaker ability: keyboard B
-window.addEventListener('keydown',e=>{ if((e.code==='KeyB')&&state==='playing'){ e.preventDefault(); fireAbility(); } });
+window.addEventListener('keydown',e=>{ if((e.code==='KeyB')&&state==='playing'){ e.preventDefault(); try{ fireAbility(); }catch(err){ console.error('fireAbility error:',err); } } });
 // two-finger tap on the canvas fires the ability (so it doesn't clash with flap)
-cv.addEventListener('touchstart',(e)=>{ if(e.touches && e.touches.length>=2 && state==='playing'){ fireAbility(); } }, {passive:false});
+cv.addEventListener('touchstart',(e)=>{ if(e.touches && e.touches.length>=2 && state==='playing'){ fireAbility(); thrustOff(); } }, {passive:false});
+// always clear thrust when touches end/cancel so 'holding' can never stick on
+cv.addEventListener('touchend',()=>{ if(!('onpointerup' in window)) thrustOff(); }, {passive:false});
+cv.addEventListener('touchcancel',thrustOff,{passive:false});
 cv.addEventListener('pointerdown',(e)=>{
   e.preventDefault();
   if(document.querySelector('.panel.open')) return;   // ignore taps when a modal is open
