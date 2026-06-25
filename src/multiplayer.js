@@ -1,4 +1,4 @@
-/ Real-time 1v1 multiplayer over WebSockets.
+// Real-time 1v1 multiplayer over WebSockets.
 // - Auto-matchmaking queue: first two waiting players are paired.
 // - Each match gets a shared random SEED so both clients generate the IDENTICAL
 //   pipe course (deterministic). We never stream pipes — just the seed.
