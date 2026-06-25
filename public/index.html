@@ -247,6 +247,8 @@
     .hero-zone{top:6px;bottom:54px}
     /* bigger tap targets for play controls */
     .qp,.rankbtn,.cat-tab{min-height:40px}
+    /* iOS zooms in when you focus an input under 16px — force 16px on mobile */
+    input[type=text],#namebox,#namebox2{font-size:16px !important}
     .lobby-head{padding:18px 18px 0}
     .lobby-head h2{font-size:26px}
     .lobby-bottom{padding:14px 16px}
@@ -489,9 +491,7 @@
 //   2. localStorage 'flappy_api'           (persists once set; see setApiUrl below)
 //   3. API_DEFAULT constant below          (bake your Railway URL in here)
 // Leave all three empty to keep the offline sandbox.
-// Game and backend are served from the SAME Railway URL, so default the API to
-// this page's own origin. (Override with ?api=... or setApiUrl() if ever split.)
-const API_DEFAULT = (location.protocol==='http:'||location.protocol==='https:') ? location.origin : '';
+const API_DEFAULT = '';   // ← paste your Railway URL here, e.g. 'https://flappy-backend-production.up.railway.app'
 function resolveApi(){
   try{
     const u=new URLSearchParams(location.search).get('api');
@@ -2219,13 +2219,12 @@ function die(){
 }
 
 function draw(){
-  // ===== VS SPLIT-SCREEN: render YOUR world into the top band =====
-  const splitVS = VS && (state==='playing'||state==='dead'||state==='countdown');
+  // ===== VS STACKED SPLIT-SCREEN: your world in the TOP band =====
+  const splitVS = VS && (state==='playing'||state==='dead');
   ctx.save();
   if(splitVS){
-    // top half = you. clip to the band and squash vertically into it.
     ctx.beginPath(); ctx.rect(0,0,W,H*0.5); ctx.clip();
-    ctx.scale(1, 0.5);
+    ctx.scale(1, 0.5);                 // compress full world into the top band
   }
   ctx.save();
   if(shake>0) ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);
@@ -2531,61 +2530,57 @@ function draw(){
 
   ctx.restore();   // end inner (shake) save
 
-  // ===== VS SPLIT-SCREEN: opponent's world in the BOTTOM band =====
   if(splitVS){
-    ctx.restore();                 // end top-band clip/scale
-    drawOpponentBand();
-    drawSplitDivider();
+    ctx.restore();             // end top-band clip/scale
+    drawOpponentBand();        // opponent in the bottom band
+    drawSplitDivider();        // seam + labels
   } else {
     ctx.restore();
   }
 }
 
-// render the opponent's live game into the bottom half of the canvas
+// render the opponent's world into the BOTTOM half (same seeded course, their bird)
 function drawOpponentBand(){
   ctx.save();
   ctx.beginPath(); ctx.rect(0,H*0.5,W,H*0.5); ctx.clip();
   ctx.translate(0,H*0.5);
   ctx.scale(1,0.5);
-  // same seeded course → draw OUR pipes (both clients are in lockstep) but with
-  // the opponent's bird Y. background uses the same map + scroll so it lines up.
   MAP().paint(ctx,W,GROUND,worldX,state,animClock||0);
   if(pipes) for(const p of pipes){ if(!p.broken) drawPipe(p.x,p.top,p.gap); }
-  // opponent bird
-  const oy = Math.max(0,Math.min(H, oppState.y));
+  // opponent bird (counter-scaled vertically so it isn't squashed)
+  const oy = Math.max(CFG.BIRD_R, Math.min(GROUND-CFG.BIRD_R, oppState.y));
   ctx.save();
   ctx.translate(CFG.BIRD_X, oy);
   ctx.rotate(oppState.rot||0);
-  ctx.scale(1.4,1.4);
-  if(!oppState.alive) ctx.globalAlpha=0.35;
+  ctx.scale(1.4,1.4*2);            // *2 undoes the 0.5 band squash
+  if(!oppState.alive) ctx.globalAlpha=0.4;
   drawBirdSprite(ctx,{clock:animClock, flapUp:Math.floor(animClock/120)%2===0,
     character:(VS.opponent&&VS.opponent.character)||'bird'});
   ctx.restore();
   if(!oppState.alive){
-    ctx.fillStyle='#ff5a4d'; ctx.font='800 56px "Space Grotesk",sans-serif'; ctx.textAlign='center';
-    ctx.globalAlpha=0.9; ctx.fillText('CRASHED', W/2, H*0.5); ctx.globalAlpha=1;
+    ctx.fillStyle='#ff5a4d'; ctx.font='800 80px "Space Grotesk",sans-serif'; ctx.textAlign='center';
+    ctx.globalAlpha=0.9; ctx.fillText('CRASHED', W/2, H*0.6); ctx.globalAlpha=1;
   }
   ctx.restore();
-  // opponent name + score badge (drawn unscaled, inside the bottom band)
+  // opponent name + score badge (unscaled, inside the bottom band)
   ctx.save();
-  ctx.fillStyle='rgba(8,12,18,0.55)'; rr(ctx,12,H*0.5+10,W-24,30,8); ctx.fill();
+  ctx.fillStyle='rgba(8,12,18,0.6)'; rr(ctx,12,H*0.5+10,200,30,8); ctx.fill();
   ctx.fillStyle='#ff8a7a'; ctx.font='700 15px "Space Grotesk",sans-serif'; ctx.textAlign='left';
   ctx.fillText('⚔ '+((VS.opponent&&VS.opponent.name)||'Opponent'), 22, H*0.5+30);
-  ctx.fillStyle='#fff'; ctx.textAlign='right'; ctx.font='800 18px "Space Grotesk",sans-serif';
-  ctx.fillText(String(oppState.score), W-22, H*0.5+31);
+  ctx.fillStyle='#fff'; ctx.textAlign='right'; ctx.font='800 26px "Space Grotesk",sans-serif';
+  ctx.fillText(String(oppState.score), W-22, H*0.75);
   ctx.restore();
 }
-// the dividing line + "YOU" / opponent labels between the two bands
+// the dividing seam + "YOU" label between the two bands
 function drawSplitDivider(){
   ctx.save();
-  // glowing seam
-  const g=ctx.createLinearGradient(0,H*0.5-3,0,H*0.5+3);
+  const g=ctx.createLinearGradient(0,H*0.5-4,0,H*0.5+4);
   g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(0.5,'#ffd23f'); g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=g; ctx.fillRect(0,H*0.5-3,W,6);
-  ctx.fillStyle='rgba(255,210,63,0.9)'; ctx.fillRect(0,H*0.5-1,W,2);
-  // "YOU" tab on the top band
+  ctx.fillStyle=g; ctx.fillRect(0,H*0.5-4,W,8);
+  ctx.fillStyle='#ffd23f'; ctx.fillRect(0,H*0.5-1,W,2);
+  // YOUR score + label on the top band
   ctx.fillStyle='#3ddc84'; ctx.font='800 13px "Space Grotesk",sans-serif'; ctx.textAlign='left';
-  ctx.fillText('YOU', 22, H*0.5-10);
+  ctx.fillText('YOU', 22, H*0.5-12);
   ctx.restore();
 }
 
@@ -2609,10 +2604,11 @@ function drawPipe(x,topH,gap){
 // The bird's shape/cosmetics now live in drawBirdSprite (TWEAK ZONE 2).
 // This just positions, rotates and scales it in the game world.
 function drawBird(){
+  const sv = (VS && (state==='playing'||state==='dead')) ? 2 : 1;  // undo 0.5 squash in split
   ctx.save();
   ctx.translate(CFG.BIRD_X,birdY);
   ctx.rotate(Math.max(-0.5,Math.min(1.1,birdV*0.05)));
-  ctx.scale(1.4,1.4);   // sprite scaled up for the wider canvas
+  ctx.scale(1.4,1.4*sv);   // sprite scaled up; vertical counter-scale in split mode
   drawBirdSprite(ctx, {clock:animClock, flapUp:Math.floor(tick/5)%2===0});
   ctx.restore();
 }
@@ -3234,8 +3230,13 @@ function rankOnTrack(item){
 
 // is this item unlocked? (server-authoritative when signed in; else local logic)
 // `id` is the item's key — needed to consult the server's unlock set.
+// FREE_PLAY: when true, EVERY character/skin/hat/costume is pickable (no locks).
+// Competitive scores are still server-verified, so this only affects what you can
+// equip/test — it can't fake leaderboard rank or token holdings on the server.
+const FREE_PLAY = true;
 function isUnlocked(item, id){
   if(!item) return true;
+  if(FREE_PLAY) return true;                     // everything unlocked for play/testing
   const gated = !!(item.rank) || reqAmount(item)>0;
   if(!gated) return true;                       // free items always unlocked
   if(SERVER_UNLOCKS){                            // server decides for gated items
@@ -3435,6 +3436,22 @@ cv.addEventListener('touchstart',e=>e.preventDefault(),{passive:false});
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 // if the player switches away mid-thrust, stop thrusting
 window.addEventListener('blur',thrustOff);
+
+// ===== MOBILE: kill double-tap zoom + pinch zoom (iOS ignores the meta tag) =====
+// double-tap zoom: swallow a second touchend that lands within 300ms
+let _lastTouchEnd=0;
+document.addEventListener('touchend',(e)=>{
+  const now=Date.now();
+  if(now-_lastTouchEnd<=300){ e.preventDefault(); }
+  _lastTouchEnd=now;
+},{passive:false});
+// pinch / multi-finger gesture zoom (Safari fires gesture* events)
+['gesturestart','gesturechange','gestureend'].forEach(ev=>
+  document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
+// block any 2-finger pinch on the document at large (the canvas already handles its own)
+document.addEventListener('touchmove',(e)=>{
+  if(e.touches && e.touches.length>1) e.preventDefault();
+},{passive:false});
 
 // ---- lobby hero: the player's bird showcased on a glowing portal podium ----
 const heroCv=$('hero'), heroCtx=heroCv?heroCv.getContext('2d'):null;
