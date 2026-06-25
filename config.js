@@ -23,6 +23,8 @@ export const CONFIG = {
 
   // token tier thresholds (whole tokens held -> tier). Mirror the game's TWEAK ZONE 11.
   TIERS: { t1: 100, t2: 1000, t3: 10000, t4: 50000, t5: 250000, t6: 1000000 },
+  // FLAP a wallet must HOLD to rank on the high-score board (held, not spent).
+  HIGHSCORE_ENTRY_THRESHOLD: parseInt(process.env.HIGHSCORE_ENTRY_THRESHOLD || '100', 10),
 
   // rank tiers (required final placement -> tier). Mirror the game's RANK.
   RANKS: { r1: 1, r3: 3, r10: 10, r30: 30, r100: 100 },

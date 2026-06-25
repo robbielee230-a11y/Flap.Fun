@@ -70,6 +70,16 @@ app.get('/unlocks', loose, requireAuth, withFinalise, async (req, res) => {
 app.post('/scores', tight, requireAuth, async (req, res) => {
   const { name, score, durationMs, flight } = req.body || {};
   try {
+    // ENTRY THRESHOLD: to rank on the high-score board the wallet must HOLD at
+    // least HIGHSCORE_ENTRY_THRESHOLD FLAP (held, never spent). Live-checked so
+    // selling your FLAP drops you out. Set the amount via env (default 100).
+    if (CONFIG.TOKEN_MINT && CONFIG.HIGHSCORE_ENTRY_THRESHOLD > 0) {
+      const balance = await getBalance(req.wallet);
+      if (balance < CONFIG.HIGHSCORE_ENTRY_THRESHOLD) {
+        return res.status(403).json({ accepted: false, reason: 'below_threshold',
+          need: CONFIG.HIGHSCORE_ENTRY_THRESHOLD, have: balance });
+      }
+    }
     const result = await submitScore({ wallet: req.wallet, name, score, durationMs, flight });
     if (!result.accepted) return res.status(422).json(result);
     res.json(result);
