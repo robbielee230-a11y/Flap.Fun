@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>FLAPPY — SANDBOX (offline tweaking)</title>
+<title>FLAP — Beta (Early Release)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Space+Grotesk:wght@500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -301,38 +301,39 @@
   .vs-fighter .tag{font-size:11px;font-weight:700;letter-spacing:.5px}
   .vs-fighter.me .tag{color:#3ddc84} .vs-fighter.opp .tag{color:#ff5a4d}
   .vs-vsbadge{font-family:"Bungee",sans-serif;font-size:34px;color:var(--sig);text-shadow:0 2px 0 #3a2a00,0 0 18px #ffd23f88}
-  /* ===== ROTATE-TO-LANDSCAPE COVER (mobile portrait) ===== */
+  /* ===== DESKTOP-ONLY COVER (shown on phones/tablets) ===== */
   #rotateCover{position:fixed;inset:0;z-index:9999;display:none;
     background:radial-gradient(circle at 50% 40%,#141d2b,#070b11);
     color:#fff;flex-direction:column;align-items:center;justify-content:center;
-    gap:22px;text-align:center;padding:32px;font-family:"Space Grotesk",sans-serif}
-  #rotateCover .phone{width:64px;height:108px;border:4px solid #ffd23f;border-radius:14px;
-    position:relative;animation:rotateHint 2.2s ease-in-out infinite;transform-origin:50% 50%}
-  #rotateCover .phone::after{content:"";position:absolute;left:50%;bottom:7px;transform:translateX(-50%);
-    width:22px;height:3px;border-radius:2px;background:#ffd23f}
-  @keyframes rotateHint{0%,30%{transform:rotate(0deg)}60%,100%{transform:rotate(-90deg)}}
-  #rotateCover .rtitle{font-size:22px;font-weight:700;color:#ffd23f;letter-spacing:.5px}
-  #rotateCover .rsub{font-size:14px;color:#aeb8c6;max-width:280px;line-height:1.5}
-  /* show the cover only on phones held in portrait */
-  @media (max-aspect-ratio:1/1) and (max-width:900px){
-    body.mobile #rotateCover{display:flex}
-    body.mobile .topbar,body.mobile .stagewrap,body.mobile .sandbox-banner{visibility:hidden}
-  }
+    gap:20px;text-align:center;padding:36px;font-family:"Space Grotesk",sans-serif}
+  #rotateCover .dlogo{font-family:"Bungee",sans-serif;font-size:40px;letter-spacing:2px;
+    color:#fff;text-shadow:2px 3px 0 #1c5fb0,-2px -2px 0 #ffe680}
+  #rotateCover .dlogo span{color:var(--sig)}
+  #rotateCover .dbeta{font-size:12px;letter-spacing:3px;text-transform:uppercase;color:#ffd23f;
+    border:1px solid #ffd23f;border-radius:20px;padding:4px 14px}
+  #rotateCover .rtitle{font-size:24px;font-weight:700;color:#fff;letter-spacing:.5px;margin-top:8px}
+  #rotateCover .rsub{font-size:15px;color:#aeb8c6;max-width:320px;line-height:1.6}
+  #rotateCover .ddesk{font-size:42px}
+  /* show the desktop-only cover on any phone/tablet (JS adds body.mobile) */
+  body.mobile #rotateCover{display:flex}
+  body.mobile .topbar,body.mobile .stagewrap,body.mobile .sandbox-banner{visibility:hidden}
 </style>
 </head>
 <body>
-  <!-- shown on phones held in portrait: asks to rotate to landscape -->
+  <!-- shown on phones/tablets: the game is desktop-only for the beta -->
   <div id="rotateCover">
-    <div class="phone"></div>
-    <div class="rtitle">Rotate your phone</div>
-    <div class="rsub">FLAPPY plays in landscape. Turn your device sideways to start flying.</div>
+    <div class="dlogo">FLA<span>P</span></div>
+    <div class="dbeta">Beta · Early Release</div>
+    <div class="ddesk">💻</div>
+    <div class="rtitle">Desktop only for now</div>
+    <div class="rsub">FLAP is in early beta and currently plays on laptop or desktop only. Open this page on a computer to fly. Mobile is coming soon.</div>
   </div>
-  <div class="sandbox-banner">🛠 SANDBOX — runs offline, no server. Scores save locally only. Search "TWEAK ZONE" in the code to edit.</div>
+  <div class="sandbox-banner">Welcome to FLAP — BETA early release ✨</div>
 
   <!-- TOP TAB BAR -->
   <div class="topbar">
     <div class="brand">
-      <span class="logo">FLAPPY</span>
+      <span class="logo">FLAP</span>
       <span class="who"><span class="dot"></span><span id="navHandle">guest</span></span>
     </div>
     <button class="tab active" data-tab="lobby"><span class="ic">🏠</span><span class="label">Home</span></button>
@@ -361,7 +362,7 @@
       <div class="loader" id="loader">
         <canvas id="loadsky" width="900" height="600"></canvas>
         <div class="load-ui">
-          <div class="llogo">FLAP<span>PY</span></div>
+          <div class="llogo">FLA<span>P</span></div>
           <div class="lsub">sky sandbox</div>
           <div class="lbar-wrap">
             <div class="lbar"><div class="lbar-fill" id="lbarFill"></div></div>
@@ -509,7 +510,7 @@
 
 <script>
 /* ============================================================
-   FLAPPY SANDBOX — everything's in this one file, no server.
+   FLAP — everything's in this one file, no server.
    Search for "TWEAK ZONE" to find the safe-to-edit blocks.
    ============================================================ */
 
@@ -1633,7 +1634,21 @@ const FX = {
 // ===== END TWEAK ZONE 6 =====
 
 const $=id=>document.getElementById(id);
-let myName='bird_'+Math.random().toString(36).slice(2,6);
+// the player's handle — persisted so it stays the same across visits, set
+// immediately on entry, and editable in Settings. Always shown in the top bar.
+let myName;
+try{ myName = localStorage.getItem('flappy_name') || ''; }catch(e){ myName=''; }
+if(!myName){ myName = 'bird_'+Math.random().toString(36).slice(2,6); try{localStorage.setItem('flappy_name',myName);}catch(e){} }
+function setMyName(v){
+  v = String(v||'').trim().slice(0,14);
+  if(!v) return;                       // ignore empty — keep the existing handle
+  myName = v;
+  try{ localStorage.setItem('flappy_name', myName); }catch(e){}
+  const nb=$('namebox'), nb2=$('namebox2');
+  if(nb && document.activeElement!==nb) nb.value=myName;
+  if(nb2 && document.activeElement!==nb2) nb2.value=myName;
+  if(typeof syncHandle==='function') syncHandle();
+}
 $('namebox').value=myName;
 function setSound(on){ SOUND.enabled=on; $('sound-cb').checked=on; const s2=$('sound-cb2'); if(s2) s2.checked=on;
   if(!on){ musStop(); } else if(MUSIC.enabled){ musStart(); } }
@@ -1792,7 +1807,7 @@ function startRun(){
     connectWallet();   // nudge them to connect; they can re-pick competitive after
     return;
   }
-  const nm=$('namebox').value.trim().slice(0,14); if(nm) myName=nm;
+  const nm=$('namebox').value.trim().slice(0,14); if(nm) setMyName(nm);
   if(audio()&&audio().state==='suspended') audio().resume();
   const pp=$('playPanel'); if(pp){ pp.classList.remove('open'); $('qpArrow').classList.remove('open'); }
   birdY=H/2;birdV=0;score=0;tick=0;nextSpawn=CFG.SPAWN_TICKS;pipes=[];acc=0;lastT=performance.now();
@@ -3458,16 +3473,16 @@ $('overlay').addEventListener('click',e=>{
   if(!cluster.contains(e.target)) togglePanel(false);
 });
 function syncHandle(){
-  const typed=$('namebox').value.trim();
-  let v;
-  if(typed) v=typed.slice(0,14);
-  else if(typeof walletConnected==='function' && walletConnected()) v=shortAddr(WALLET.pubkey);
-  else v=myName.slice(0,14);
-  $('navHandle').textContent=v;
-  const n2=$('namebox2'); if(n2 && document.activeElement!==n2) n2.value=$('namebox').value;
+  // the top-bar handle ALWAYS shows the current name (never blank)
+  $('navHandle').textContent = (myName||'guest').slice(0,14);
+  // keep both name inputs in sync with myName (unless one is being typed in)
+  const nb=$('namebox'), n2=$('namebox2');
+  if(nb && document.activeElement!==nb) nb.value=myName;
+  if(n2 && document.activeElement!==n2) n2.value=myName;
 }
-$('namebox').addEventListener('input',syncHandle);
-{ const n2=$('namebox2'); if(n2) n2.addEventListener('input',()=>{ $('namebox').value=n2.value; syncHandle(); }); }
+// editing either name field updates + persists the handle live
+$('namebox').addEventListener('input',e=>setMyName(e.target.value));
+{ const n2=$('namebox2'); if(n2) n2.addEventListener('input',e=>setMyName(e.target.value)); }
 
 /* ---------- top tabs + panels ---------- */
 function openTab(name){
@@ -3854,27 +3869,19 @@ pipes=pipes||[];   // ensure iterable before the first idle-lobby draw
 if(typeof connectStatsSocket==='function') connectStatsSocket();   // live player counts in lobby
 if(typeof updateLobbyStats==='function') updateLobbyStats();
 
-// ===== MOBILE: landscape-only =====
-// Mark phones so the rotate-to-landscape cover can show in portrait, and TRY a
-// real orientation lock (works on some Android/Chrome once fullscreen; iOS Safari
-// ignores it, so the rotate cover is the reliable fallback there).
-(function landscapeOnly(){
-  const isMobile = /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent)
-                   || (('ontouchstart' in window) && Math.min(screen.width,screen.height)<820);
-  if(isMobile) document.body.classList.add('mobile');
-  // attempt the hard lock (best-effort; silently ignored where unsupported)
-  async function tryLock(){
-    try{
-      if(screen.orientation && screen.orientation.lock){
-        await screen.orientation.lock('landscape');
-      }
-    }catch(e){ /* not allowed (needs fullscreen / iOS) — rotate cover handles it */ }
-  }
-  // browsers only allow the lock after a user gesture &/or fullscreen; try on first tap
-  window.addEventListener('pointerdown', function once(){
-    tryLock();
-    window.removeEventListener('pointerdown', once);
-  }, {once:true});
+// ===== DESKTOP-ONLY (beta): block phones & tablets =====
+// Detect any phone or tablet and add body.mobile, which shows the "desktop only"
+// cover and hides the game. Catches iOS, Android, and iPads (incl. iPadOS that
+// disguises itself as desktop Safari by also checking for touch + Mac platform).
+(function desktopOnly(){
+  const ua = navigator.userAgent || '';
+  const isPhoneTablet =
+    /Android|iPhone|iPad|iPod|Mobile|Silk|Tablet|PlayBook|Kindle|Opera Mini|IEMobile/i.test(ua)
+    // iPadOS 13+ reports as "Macintosh" but has touch — catch it:
+    || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)
+    // generic touch + smallish screen fallback
+    || (('ontouchstart' in window) && Math.min(screen.width,screen.height) < 820 && !window.matchMedia('(pointer:fine)').matches);
+  if(isPhoneTablet) document.body.classList.add('mobile');
 })();
 
 </script>
