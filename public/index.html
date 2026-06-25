@@ -489,7 +489,9 @@
 //   2. localStorage 'flappy_api'           (persists once set; see setApiUrl below)
 //   3. API_DEFAULT constant below          (bake your Railway URL in here)
 // Leave all three empty to keep the offline sandbox.
-const API_DEFAULT = '';   // ← paste your Railway URL here, e.g. 'https://flappy-backend-production.up.railway.app'
+// Game and backend are served from the SAME Railway URL, so default the API to
+// this page's own origin. (Override with ?api=... or setApiUrl() if ever split.)
+const API_DEFAULT = (location.protocol==='http:'||location.protocol==='https:') ? location.origin : '';
 function resolveApi(){
   try{
     const u=new URLSearchParams(location.search).get('api');

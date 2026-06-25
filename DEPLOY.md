@@ -1,103 +1,45 @@
-# FLAPP — deploy to a public link
+# Flap.Fun — Deploy Guide (1v1 multiplayer + leaderboard)
 
-Goal: a URL anyone can click to play, with one shared server-verified leaderboard.
+This package contains BOTH the game and the backend in one. When deployed,
+one Railway service serves the game AND runs multiplayer + leaderboard at the
+SAME URL. No second service needed.
 
-This bundles the front-end and the server together, so you deploy **one service**.
-(You can split them later; bundled is simplest to launch.)
+## What changed (why your old deploy didn't have multiplayer)
+- The old root `server.js` was a prototype with NO multiplayer and broken
+  imports. It's been replaced with one that launches the real backend.
+- The real backend (`src/server.js`) now ALSO serves the game from `public/`.
+- The game (`public/index.html`) auto-connects to its own URL — no config.
 
----
+## How to deploy (replace your whole repo with these files)
 
-## What you're deploying
+1. On GitHub, open your repo `Flap.Fun`.
+2. EASIEST: delete the old files and upload these. OR use the web upload:
+   - Click "Add file" -> "Upload files"
+   - Drag in ALL files/folders from this package (server.js, package.json,
+     railway.json, src/, public/, etc.)
+   - It will overwrite files with the same name. Commit.
+3. Railway auto-redeploys on the commit.
 
-```
- player's browser
-        │   https://your-app.up.railway.app
-        ▼
- ┌─────────────────────────┐
- │  Railway service        │
- │   node server.js        │  ← serves the game AND verifies runs
- │   + Postgres addon      │  ← shared leaderboard, survives restarts
- └─────────────────────────┘
-```
+## Railway settings (one-time)
+Open your Flap.Fun SERVICE -> Variables tab. Make sure these exist:
 
----
+- `DATABASE_URL`  -> should already be there (injected by your Postgres plugin).
+                     If not: in the Postgres service, copy its connection URL.
+- `JWT_SECRET`    -> set to any long random string (e.g. run `openssl rand -hex 32`).
+- `ALLOWED_ORIGINS` -> set to `*` to start (tighten later to your game URL).
 
-## Step 1 — put the code on GitHub
+Leave `TOKEN_MINT` empty (disables wallet/token gating — multiplayer + board
+still work fully without it). `PORT` is auto-injected by Railway; don't set it.
 
-```bash
-cd flapp-deploy
-git init && git add . && git commit -m "FLAPP verified leaderboard"
-# create an empty repo on github.com, then:
-git remote add origin https://github.com/YOU/flapp.git
-git push -u origin main
-```
+## Verify it worked
+1. After redeploy, visit:  https://YOUR-URL.up.railway.app/health
+   You should see:  {"ok":true,"season":...}
+   (If you see {"error":"not found"} the OLD server is still running — make sure
+    the new root server.js and package.json were uploaded.)
+2. Open the game. The 1v1 tab should now find matches (needs TWO players in the
+   queue — open the game in two browser tabs/devices to test).
 
-## Step 2 — deploy on Railway
-
-1. Go to railway.app, **New Project → Deploy from GitHub repo**, pick your repo.
-2. Railway detects Node and runs `node server.js` (from `railway.json`).
-3. **Add a database:** in the project, **New → Database → PostgreSQL**. Railway
-   automatically injects `DATABASE_URL` into your service. The server picks it up
-   and creates its tables on first boot — nothing else to do.
-4. **Set env vars** (service → Variables):
-   - `SESSION_SECRET` → a long random string. Generate one:
-     ```bash
-     node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-     ```
-   - `ALLOWED_ORIGIN` → your Railway URL once you know it (e.g.
-     `https://flapp-production.up.railway.app`). Set to `*` for the first deploy,
-     then tighten.
-   - Leave `REQUIRE_WALLET=0` for now (handle-based test version).
-5. Railway gives you a public URL. **That's your link.** Open it — you're playing.
-
-## Step 3 — share it
-
-Send the URL to your mate. You both open it, pick handles, play. Scores are
-re-simulated server-side and the board syncs live for everyone connected.
-
-For a custom domain (flappgame.xyz): Railway → Settings → Networking → Custom
-Domain, then point your DNS. Update `ALLOWED_ORIGIN` to match.
-
----
-
-## Render / Fly.io instead of Railway
-
-Same shape: connect the repo, add managed Postgres (sets `DATABASE_URL`), set
-`SESSION_SECRET` and `ALLOWED_ORIGIN`, deploy. The code is host-agnostic.
-
----
-
-## Cost
-
-Railway/Render free tiers cover early testing. A live always-on service with
-Postgres is ~$5–10/mo. That's the real cost of "always available at a link" — a
-shared board can't be free-static like a single HTML file, because something has
-to hold the board and verify runs 24/7.
-
----
-
-## Local dev (no database needed)
-
-```bash
-npm install
-SESSION_SECRET=dev-secret node server.js
-# open http://localhost:8787  — uses in-memory store, resets on restart
-```
-
----
-
-## ⚠️ Before this carries real money — unchanged from README
-
-Hosting makes it *public*. It does not make a real-money pot *safe* or *legal*.
-A public link reaches everyone, everywhere, which raises the stakes on every gap:
-
-- **Turn on wallet auth** (`REQUIRE_WALLET=1`) so scores tie to a real wallet, and
-  add the on-chain hold-gate eligibility check (stubbed in server.js).
-- **Tune bot-detection** (anticheat.js) on real human play before any prize rides on it.
-- **Geo-fence + terms.** A public URL serves jurisdictions where a paid prize pool
-  may be illegal. This is part of "can this link legally exist," per the specific
-  conditions your lawyer gave you — not optional polish.
-- **Payouts sign server-side** from a hot wallet with minimal balance + a manual
-  circuit-breaker. Never in the client.
-
-Deploy the game now. Keep the pot mocked. Wire real value only after the above.
+## Notes
+- Multiplayer needs NO wallet. Anyone can play 1v1.
+- The shared leaderboard's competitive scores DO need a wallet sign-in (Phantom).
+- Seasons are 3 days, derived from time — no setup needed.

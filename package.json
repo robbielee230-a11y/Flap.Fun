@@ -1,19 +1,27 @@
 {
-  "name": "flapp-server",
+  "name": "flappy-backend",
   "version": "1.0.0",
+  "description": "Backend API for Flappy: shared leaderboard, 3-day seasons, wallet-verified token gating and rank rewards.",
   "type": "module",
-  "description": "FLAPP authoritative game server + verified leaderboard",
-  "main": "server.js",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node verify.test.js"
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node src/migrate.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
-    "pg": "^8.11.5",
+    "@solana/web3.js": "^1.95.3",
+    "bs58": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.12.0",
     "tweetnacl": "^1.0.3",
-    "bs58": "^5.0.0"
+    "ws": "^8.18.0"
   }
 }
