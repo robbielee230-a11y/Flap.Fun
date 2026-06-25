@@ -70,6 +70,36 @@ export async function leaderboard(limit = 100, sid = seasonId()) {
   }));
 }
 
+// ---- 1v1 WINS leaderboard ----
+// Record a verified versus win for a wallet in the current season (+1).
+// Called only by the server's match engine when a match legitimately ends.
+export async function recordVsWin({ wallet, name }) {
+  if (!wallet) return { accepted: false, reason: 'no_wallet' };
+  const sid = seasonId();
+  await query(
+    `INSERT INTO vs_wins (season_id, wallet, name, wins, updated_at)
+       VALUES ($1, $2, $3, 1, now())
+     ON CONFLICT (season_id, wallet)
+       DO UPDATE SET wins = vs_wins.wins + 1, name = EXCLUDED.name, updated_at = now()`,
+    [sid, wallet, String(name || 'Player').slice(0, 14)]);
+  return { accepted: true };
+}
+
+// top N by 1v1 wins this season
+export async function vsWinsLeaderboard(limit = 100, sid = seasonId()) {
+  const { rows } = await query(
+    `SELECT name, wallet, wins,
+            ROW_NUMBER() OVER (ORDER BY wins DESC, updated_at ASC) AS rank
+       FROM vs_wins WHERE season_id = $1
+      ORDER BY wins DESC, updated_at ASC
+      LIMIT $2`,
+    [sid, limit]);
+  return rows.map(r => ({
+    rank: Number(r.rank), name: r.name, wins: r.wins,
+    wallet: r.wallet.slice(0, 4) + '…' + r.wallet.slice(-4),
+  }));
+}
+
 // ---- season finalisation ----
 // When a season ends, snapshot final standings into permanent rank_awards.
 // Idempotent: a season is only finalised once. Safe to call on every request /
