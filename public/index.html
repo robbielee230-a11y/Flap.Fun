@@ -484,14 +484,13 @@
         <div class="panel-card">
           <span class="panel-close" data-close>✕</span>
           <h3>💬 Global Chat</h3>
-          <div class="sub">Be kind. Links &amp; wallet addresses are blocked. Hold any FLAP to post.</div>
+          <div class="sub">Be kind. Links &amp; wallet addresses are blocked.</div>
           <div id="chatLog" class="chat-log"></div>
-          <button id="chatSignIn" class="chat-signin">🔑 Sign in to chat</button>
           <div class="chat-input-row">
-            <input id="chatInput" type="text" maxlength="240" placeholder="Sign in to chat…" disabled autocomplete="off">
-            <button id="chatSend" class="chat-send" disabled>Send</button>
+            <input id="chatInput" type="text" maxlength="240" placeholder="Say something…" autocomplete="off">
+            <button id="chatSend" class="chat-send">Send</button>
           </div>
-          <div class="note" id="chatNote">Hold any FLAP to chat. Keep it respectful — slurs, scams, links and wallet addresses are filtered automatically.</div>
+          <div class="note" id="chatNote">Keep it respectful — slurs, scams, links and wallet addresses are filtered automatically.</div>
         </div>
       </div>
 
@@ -3265,25 +3264,47 @@ function bs58enc(bytes){
 // prove wallet ownership to the server (Phantom signs a server nonce)
 let _signingIn=false;
 async function serverSignIn(force){
-  if(!API) return;
-  if(SESSION && !force) return;             // already signed in — don't re-prompt
-  if(_signingIn) return;                    // a sign-in is already in flight
-  // if no wallet yet, connect first (then this runs again via onWalletChange)
-  if(!WALLET.pubkey){ if(typeof connectWallet==='function') await connectWallet(); if(!WALLET.pubkey) return; }
+  const say=(t)=>{ try{ if(typeof chatAdd==='function') chatAdd({sys:true,text:t}); }catch(e){} console.log('[signin]',t); };
+  if(!API){ say('No server configured (API empty).'); return; }
+  if(SESSION && !force){ return; }
+  if(_signingIn){ say('Already signing in…'); return; }
+  // make sure we have a wallet first
+  if(!WALLET.pubkey){
+    say('Connecting wallet…');
+    if(typeof connectWallet==='function') await connectWallet();
+    if(!WALLET.pubkey){ say('Wallet not connected — approve the Phantom connect popup.'); return; }
+  }
+  const p=getPhantom();
+  if(!p){ say('Phantom not detected. Use a desktop browser with the Phantom extension, unlocked.'); return; }
+  if(!p.signMessage){ say('This wallet can’t sign messages here.'); return; }
   _signingIn=true;
   try{
+    say('Requesting sign-in…');
     const n=await fetch(API+'/auth/nonce',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({wallet:WALLET.pubkey})}).then(r=>r.json());
-    if(!n.nonce) return;
+    if(!n || !n.nonce){ say('Server didn’t return a sign-in challenge. Try again in a moment.'); return; }
     const enc=new TextEncoder().encode(n.nonce);
-    const p=getPhantom(); if(!p||!p.signMessage){ alert('Open the game in a browser with Phantom installed to sign in.'); return; }
+    say('Approve the signature in Phantom…');
     const sig=await p.signMessage(enc,'utf8');
-    const sigBytes=sig.signature||sig;     // Phantom returns {signature:Uint8Array}
+    const sigBytes=sig.signature||sig;
     const v=await fetch(API+'/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({wallet:WALLET.pubkey, signature:bs58enc(sigBytes), nonce:n.nonce})}).then(r=>r.json());
-    if(v.session){ SESSION=v.session; if(typeof applyMode==='function') applyMode(); await refreshHoldings(); if(typeof chatAuth==='function') chatAuth(); if(typeof updateChatSignInBtn==='function') updateChatSignInBtn(); }
-    else { console.warn('sign-in rejected:', v && (v.error||v.reason||JSON.stringify(v))); }
-  }catch(e){ console.warn('server sign-in failed',e); }
+    if(v && v.session){
+      SESSION=v.session;
+      if(typeof applyMode==='function') applyMode();
+      await refreshHoldings();
+      if(typeof chatAuth==='function') chatAuth();
+      if(typeof updateChatSignInBtn==='function') updateChatSignInBtn();
+      say('Signed in ✓ checking your FLAP balance…');
+    } else {
+      say('Sign-in rejected by server'+(v&&(v.error||v.reason)?': '+(v.error||v.reason):'')+'.');
+    }
+  }catch(e){
+    // Phantom throws if the user dismisses the signature popup
+    if(e && (e.code===4001 || /reject/i.test(e.message||''))) say('You dismissed the signature — tap “Sign in to chat” and approve it.');
+    else say('Sign-in failed: '+((e&&e.message)||'unknown error')+'.');
+    console.warn('server sign-in failed',e);
+  }
   finally{ _signingIn=false; }
 }
 function serverSignOut(){ SESSION=null; SERVER_UNLOCKS=null; }
@@ -3355,17 +3376,15 @@ function chatAdd(entry){
 function chatSetEnabled(on){
   CHAT_CAN_POST=on;
   const inp=$('chatInput'), btn=$('chatSend');
-  if(inp){ inp.disabled=!on; inp.placeholder = on?'Say something…':'Sign in to chat…'; }
+  if(inp){ inp.disabled=!on; inp.placeholder='Say something…'; }
   if(btn) btn.disabled=!on;
-  if(typeof updateChatSignInBtn==='function') updateChatSignInBtn();
 }
-function updateChatSignInBtn(){
-  const b=$('chatSignIn'); if(!b) return;
-  // show the sign-in button only when we're NOT signed in (no SESSION)
-  b.style.display = SESSION ? 'none' : '';
-  b.textContent = WALLET.pubkey ? '🔑 Sign in to chat' : '👻 Connect & sign in to chat';
-}
-{ const b=$('chatSignIn'); if(b) b.addEventListener('click',()=>{ if(typeof serverSignIn==='function') serverSignIn(true); }); }
+function updateChatSignInBtn(){ /* open chat — no sign-in button */ }
+// delegated click — always fires even if the button is (re)rendered
+document.addEventListener('click',(e)=>{
+  const b=e.target && e.target.closest && e.target.closest('#chatSignIn');
+  if(b){ e.preventDefault(); if(typeof serverSignIn==='function') serverSignIn(true); }
+});
 function chatAuth(){
   // (re)send our identity to the chat server so posting unlocks once signed in
   if(CHATWS && CHATWS.readyState===1){
@@ -3377,24 +3396,14 @@ function chatConnect(){
   if(CHATWS && (CHATWS.readyState===0||CHATWS.readyState===1)){ chatAuth(); return; }
   try{ CHATWS=new WebSocket(chatURL()); }catch(e){ return; }
   CHATWS.onopen=()=>{
-    // identify ourselves so we can post (read works regardless)
+    // open chat: send our display name so messages are attributed
     chatAuth();
-    if(typeof updateChatSignInBtn==='function') updateChatSignInBtn();
-    // if not signed in yet, nudge the user
-    if(!SESSION){
-      chatAdd({sys:true,text:'Hold any FLAP, then tap “Sign in to chat” below.'});
-    }
+    chatSetEnabled(true);
   };
   CHATWS.onmessage=(ev)=>{
     let m; try{ m=JSON.parse(ev.data); }catch{ return; }
     if(m.t==='history'){ const log=$('chatLog'); if(log) log.innerHTML=''; (m.messages||[]).forEach(chatAdd); }
-    else if(m.t==='authed'){
-      chatSetEnabled(!!m.canPost);
-      if(!m.canPost){
-        if(m.reason==='need_hold') chatAdd({sys:true,text:'Hold any FLAP to chat.'});
-        else chatAdd({sys:true,text:'Sign in with your wallet to chat.'});
-      }
-    }
+    else if(m.t==='authed'){ chatSetEnabled(true); }
     else if(m.t==='msg'){ chatAdd(m); }
     else if(m.t==='blocked'){ chatAdd({sys:true,text:m.message||'Message blocked.'}); }
   };
