@@ -486,7 +486,7 @@
           <h3>💬 Global Chat</h3>
           <div class="sub">Be kind. Links &amp; wallet addresses are blocked. Hold any FLAP to post.</div>
           <div id="chatLog" class="chat-log"></div>
-          <button id="chatSignIn" class="chat-signin" style="display:none">🔑 Sign in to chat</button>
+          <button id="chatSignIn" class="chat-signin">🔑 Sign in to chat</button>
           <div class="chat-input-row">
             <input id="chatInput" type="text" maxlength="240" placeholder="Sign in to chat…" disabled autocomplete="off">
             <button id="chatSend" class="chat-send" disabled>Send</button>
@@ -3934,7 +3934,7 @@ function openTab(name){
     if(typeof stopLbCountdown==='function') stopLbCountdown();
   }
   if(name==='shop'){ refreshHoldings(); buildShop(); updateHoldingsUI(); requestAnimationFrame(shopPreviewLoop); }
-  if(name==='chat'){ if(typeof chatConnect==='function') chatConnect(); }
+  if(name==='chat'){ if(typeof chatConnect==='function') chatConnect(); if(typeof updateChatSignInBtn==='function') updateChatSignInBtn(); }
   else { if(typeof chatDisconnect==='function') chatDisconnect(); }
   if(SOUND.enabled){ try{audio()&&audio().resume();}catch(e){} beep(560,0.05,'triangle',0.4); }
   // lobby/menus: make sure the soundtrack is playing and at full volume
