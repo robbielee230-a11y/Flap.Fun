@@ -183,21 +183,26 @@
   .lb-seg:hover{color:var(--sig)}
   .lb-seg.lb-active{background:var(--accent,#ffd23f);color:#1a1a22;box-shadow:0 2px 6px rgba(0,0,0,0.25)}
   /* live chat */
-  .chat-log{height:46vh;max-height:380px;overflow-y:auto;background:rgba(0,0,0,0.22);
-    border-radius:12px;padding:10px 12px;margin:12px 0;display:flex;flex-direction:column;gap:7px}
-  .chat-msg{font-size:13.5px;line-height:1.4;word-break:break-word}
-  .chat-msg .cn{font-weight:800;color:var(--sig,#ffd23f);margin-right:6px}
-  .chat-msg .cw{font-size:10px;color:var(--mute,#67707a);margin-left:4px}
-  .chat-sys{font-size:12px;color:var(--mute,#67707a);font-style:italic;text-align:center}
-  .chat-input-row{display:flex;gap:8px}
-  #chatInput{flex:1;background:rgba(0,0,0,0.28);border:1px solid var(--line);border-radius:10px;
-    padding:11px 13px;color:var(--sig,#fff);font-size:14px;outline:none}
-  #chatInput:disabled{opacity:.6}
-  .chat-send{border:none;border-radius:10px;padding:0 18px;font-weight:800;cursor:pointer;
-    background:var(--accent,#ffd23f);color:#1a1a22}
-  .chat-send:disabled{opacity:.5;cursor:not-allowed}
-  .chat-signin{width:100%;margin-bottom:10px;border:none;border-radius:10px;padding:12px;
-    font-weight:800;font-size:14px;cursor:pointer;background:var(--accent,#ffd23f);color:#1a1a22}
+  .chat-log{height:48vh;max-height:400px;overflow-y:auto;background:rgba(0,0,0,0.28);
+    border:1px solid var(--line);border-radius:14px;padding:14px;margin:14px 0;
+    display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
+  .chat-log::-webkit-scrollbar{width:8px}
+  .chat-log::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:4px}
+  .chat-msg{font-size:14px;line-height:1.45;word-break:break-word;
+    background:rgba(255,255,255,0.04);border-radius:10px;padding:8px 11px;max-width:88%;align-self:flex-start}
+  .chat-msg .cn{display:block;font-weight:800;font-size:12px;color:var(--sig,#ffd23f);margin-bottom:2px;letter-spacing:.2px}
+  .chat-msg .ct{color:#e8ecf1}
+  .chat-msg .cw{font-size:10px;color:var(--mute,#67707a);margin-left:6px;font-weight:500}
+  .chat-sys{font-size:11.5px;color:var(--mute,#7a838d);text-align:center;padding:2px 0;opacity:.85}
+  .chat-input-row{display:flex;gap:8px;align-items:stretch}
+  #chatInput{flex:1;background:rgba(0,0,0,0.32);border:1px solid var(--line);border-radius:12px;
+    padding:13px 15px;color:#fff;font-size:14.5px;outline:none;transition:border-color .15s}
+  #chatInput::placeholder{color:#6b747d}
+  #chatInput:focus{border-color:var(--accent,#ffd23f)}
+  .chat-send{border:none;border-radius:12px;padding:0 22px;font-weight:800;font-size:14px;cursor:pointer;
+    background:var(--accent,#ffd23f);color:#1a1a22;transition:transform .08s,filter .15s}
+  .chat-send:hover{filter:brightness(1.06)}
+  .chat-send:active{transform:scale(.96)}
   /* ===== ITEM SHOP ===== */
   .shop-card{width:min(680px,94%)}
   .shop-layout{display:flex;gap:18px;align-items:stretch}
@@ -3365,11 +3370,13 @@ function chatAdd(entry){
   if(entry.sys){ div.className='chat-sys'; div.textContent=entry.text; }
   else{
     div.className='chat-msg';
-    div.innerHTML='<span class="cn">'+chatEsc(entry.name)+'</span>'+chatEsc(entry.text)+
-      (entry.wallet?'<span class="cw">'+chatEsc(entry.wallet)+'</span>':'');
+    // mark my own messages so they can align right
+    if(entry.name && myName && entry.name===myName){ div.style.alignSelf='flex-end'; div.style.background='rgba(255,210,63,0.12)'; }
+    div.innerHTML='<span class="cn">'+chatEsc(entry.name)+
+      (entry.wallet?'<span class="cw">'+chatEsc(entry.wallet)+'</span>':'')+
+      '</span><span class="ct">'+chatEsc(entry.text)+'</span>';
   }
   log.appendChild(div);
-  // trim DOM
   while(log.children.length>120) log.removeChild(log.firstChild);
   log.scrollTop=log.scrollHeight;
 }
@@ -3412,12 +3419,29 @@ function chatConnect(){
 }
 function chatDisconnect(){ try{ if(CHATWS){ CHATWS.onclose=null; CHATWS.close(); CHATWS=null; } }catch(e){} }
 function chatSend(){
-  const inp=$('chatInput'); if(!inp||!CHAT_CAN_POST) return;
+  const inp=$('chatInput'); if(!inp) return;
   const text=inp.value.trim(); if(!text) return;
-  if(CHATWS && CHATWS.readyState===1){ CHATWS.send(JSON.stringify({t:'say', text})); inp.value=''; }
+  // make sure we have a live socket; reconnect if it dropped
+  if(!CHATWS || CHATWS.readyState!==1){
+    chatConnect();
+    // queue this message to fire once connected
+    const t=text; inp.value='';
+    let tries=0;
+    const iv=setInterval(()=>{
+      tries++;
+      if(CHATWS && CHATWS.readyState===1){ CHATWS.send(JSON.stringify({t:'say', text:t})); clearInterval(iv); }
+      else if(tries>20){ clearInterval(iv); chatAdd({sys:true,text:'Couldn’t reach chat — try again.'}); }
+    },150);
+    return;
+  }
+  CHATWS.send(JSON.stringify({t:'say', text})); inp.value='';
 }
-{ const b=$('chatSend'); if(b) b.addEventListener('click',chatSend);
-  const i=$('chatInput'); if(i) i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); chatSend(); } }); }
+// delegated handlers so they always work even after re-render
+document.addEventListener('click',e=>{ if(e.target && e.target.closest && e.target.closest('#chatSend')){ e.preventDefault(); chatSend(); } });
+document.addEventListener('keydown',e=>{
+  const inp=e.target;
+  if(inp && inp.id==='chatInput' && e.key==='Enter'){ e.preventDefault(); chatSend(); }
+});
 let VSWS=null;          // the WebSocket
 let VS_STATS={ online:0, queue:0 };       // live player counts from the server
 let STATSWS=null;                          // lightweight lobby socket for live counts
@@ -4019,16 +4043,23 @@ document.querySelectorAll('.panel').forEach(p=> p.addEventListener('click',e=>{ 
 }
 
 $('playBtn').addEventListener('click',()=>{ if(!VS) startRun(); });
-window.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();
+// true when the user is typing in a text field — never hijack keys then
+function typingInField(){
+  const a=document.activeElement;
+  return a && (a.tagName==='INPUT' || a.tagName==='TEXTAREA' || a.isContentEditable);
+}
+window.addEventListener('keydown',e=>{if(e.code==='Space'){
+  if(typingInField()) return;                // let the space character through
+  e.preventDefault();
   if(state==='loading') return;
   if(e.repeat) return;                       // ignore key-repeat for clean press
   if($('vsScreen') && $('vsScreen').classList.contains('show')) return;
   // don't start a run while a modal panel is open
   if(document.querySelector('.panel.open')) return;
   if(state==='playing'){ flap(); thrustOn(); } else if(!VS && state==='idle'){ startRun(); }}});
-window.addEventListener('keyup',e=>{ if(e.code==='Space') thrustOff(); });
+window.addEventListener('keyup',e=>{ if(e.code==='Space' && !typingInField()) thrustOff(); });
 // fire pipe-breaker ability: keyboard B
-window.addEventListener('keydown',e=>{ if((e.code==='KeyB')&&state==='playing'){ e.preventDefault(); try{ fireAbility(); }catch(err){ console.error('fireAbility error:',err); } } });
+window.addEventListener('keydown',e=>{ if((e.code==='KeyB')&&state==='playing' && !typingInField()){ e.preventDefault(); try{ fireAbility(); }catch(err){ console.error('fireAbility error:',err); } } });
 // two-finger tap on the canvas fires the ability (so it doesn't clash with flap)
 cv.addEventListener('touchstart',(e)=>{ if(e.touches && e.touches.length>=2 && state==='playing'){ fireAbility(); thrustOff(); } }, {passive:false});
 // always clear thrust when touches end/cancel so 'holding' can never stick on
