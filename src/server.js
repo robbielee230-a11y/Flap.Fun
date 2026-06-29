@@ -1,4 +1,3 @@
-
 // Flappy backend API server.
 import http from 'http';
 import path from 'path';
@@ -16,27 +15,26 @@ import {
   submitScore, leaderboard, finaliseDueSeasons, bestRank, computeUnlocks, rankForWallet,
   vsWinsLeaderboard,
 } from './leaderboard.js';
-import { rankFor as ladderRankFor, legendBoard, weekId, weekRemainingMs } from './rank.js';
- 
+
 const app = express();
 app.set('trust proxy', 1); // Railway sits behind a proxy; needed for rate-limit IPs
 app.use(express.json({ limit: '16kb' }));
 app.use(cors({
   origin: CONFIG.ALLOWED_ORIGINS.includes('*') ? true : CONFIG.ALLOWED_ORIGINS,
 }));
- 
+
 // basic rate limits
 const tight = rateLimit({ windowMs: 60_000, max: 30 });   // auth + score submit
 const loose = rateLimit({ windowMs: 60_000, max: 120 });  // reads
- 
+
 // run season finalisation opportunistically (cheap, idempotent) before sensitive reads
 async function withFinalise(req, res, next) {
   try { await finaliseDueSeasons(); } catch (e) { console.warn('[finalise]', e.message); }
   next();
 }
- 
+
 app.get('/health', (req, res) => res.json({ ok: true, season: seasonId() }));
- 
+
 // ---- AUTH: prove wallet ownership ----
 app.post('/auth/nonce', tight, async (req, res) => {
   const { wallet } = req.body || {};
@@ -44,7 +42,7 @@ app.post('/auth/nonce', tight, async (req, res) => {
   try { res.json(await issueNonce(wallet)); }
   catch (e) { console.error(e); res.status(500).json({ error: 'server_error' }); }
 });
- 
+
 app.post('/auth/verify', tight, async (req, res) => {
   const { wallet, signature, nonce } = req.body || {};
   if (!isValidWallet(wallet) || !signature || !nonce)
@@ -52,7 +50,7 @@ app.post('/auth/verify', tight, async (req, res) => {
   try { res.json(await verifySignature(wallet, signature, nonce)); }
   catch (e) { res.status(401).json({ error: e.message }); }
 });
- 
+
 // ---- UNLOCKS: authoritative token-tier + rank skin set for the logged-in wallet ----
 app.get('/unlocks', loose, requireAuth, withFinalise, async (req, res) => {
   try {
@@ -67,7 +65,7 @@ app.get('/unlocks', loose, requireAuth, withFinalise, async (req, res) => {
     });
   } catch (e) { console.error(e); res.status(500).json({ error: 'server_error' }); }
 });
- 
+
 // ---- SCORES ----
 // submit a competitive score (auth required so scores tie to a verified wallet)
 app.post('/scores', tight, requireAuth, async (req, res) => {
@@ -88,7 +86,7 @@ app.post('/scores', tight, requireAuth, async (req, res) => {
     res.json(result);
   } catch (e) { console.error(e); res.status(500).json({ error: 'server_error' }); }
 });
- 
+
 // public leaderboard for the current season + countdown
 app.get('/leaderboard', loose, withFinalise, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || '100', 10) || 100, 200);
@@ -103,7 +101,7 @@ app.get('/leaderboard', loose, withFinalise, async (req, res) => {
     });
   } catch (e) { console.error(e); res.status(500).json({ error: 'server_error' }); }
 });
- 
+
 // public 1v1 WINS leaderboard for the current season
 app.get('/leaderboard/wins', loose, withFinalise, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || '100', 10) || 100, 200);
@@ -118,27 +116,7 @@ app.get('/leaderboard/wins', loose, withFinalise, async (req, res) => {
     });
   } catch (e) { console.error(e); res.status(500).json({ error: 'server_error' }); }
 });
- 
-// ---- WEEKLY RANKED LADDER ----
-// the signed-in wallet's current ladder rank (tier/division/stars or Legend)
-app.get('/me/ladder', loose, requireAuth, async (req, res) => {
-  try {
-    res.json(await ladderRankFor(req.wallet));
-  } catch (e) { console.error(e); res.status(500).json({ error: 'server_error' }); }
-});
- 
-// the Legend leaderboard for the current week
-app.get('/leaderboard/legend', loose, async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit || '100', 10) || 100, 200);
-  try {
-    res.json({
-      week: weekId(),
-      remainingMs: weekRemainingMs(),
-      board: await legendBoard(limit),
-    });
-  } catch (e) { console.error(e); res.status(500).json({ error: 'server_error' }); }
-});
- 
+
 // the logged-in wallet's current standing this season (old rank-awards system)
 app.get('/me/rank', loose, requireAuth, async (req, res) => {
   try {
@@ -146,26 +124,26 @@ app.get('/me/rank', loose, requireAuth, async (req, res) => {
     res.json({ season: sid, liveRank: await rankForWallet(sid, req.wallet), bestRank: await bestRank(req.wallet) });
   } catch (e) { console.error(e); res.status(500).json({ error: 'server_error' }); }
 });
- 
+
 // ---- serve the game's static files (public/) ----
 // The game's index.html lives in ../public relative to this file (src/server.js).
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR));
 app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
- 
+
 // ---- boot ----
 const PORT = CONFIG.PORT;
 const httpServer = http.createServer(app);
 attachMultiplayer(httpServer);   // WebSocket 1v1 at /ws
 attachChat(httpServer);          // WebSocket live chat at /chat
- 
+
 migrate()
   .then(() => finaliseDueSeasons().catch(() => {}))
   .then(() => {
     httpServer.listen(PORT, () => console.log(`[flappy-backend] http+ws on :${PORT} (season ${seasonId()})`));
   })
   .catch(e => { console.error('[boot] failed:', e); process.exit(1); });
- 
+
 // also run finalisation on a timer so seasons roll over even with no traffic
 setInterval(() => finaliseDueSeasons().catch(() => {}), 5 * 60 * 1000);
