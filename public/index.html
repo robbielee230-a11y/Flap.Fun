@@ -176,6 +176,12 @@
   .rank{color:var(--mute);width:30px}.who.me{color:var(--sig);font-weight:600}
   .sc{text-align:right;font-weight:600}.lead-1 .rank{color:var(--sig)}
   .note{font-size:12px;color:var(--sig-dim);line-height:1.6;margin-top:14px}
+  /* leaderboard sub-tab toggle */
+  .lb-toggle{display:flex;gap:6px;background:rgba(0,0,0,0.25);padding:5px;border-radius:12px;margin:12px 0 14px}
+  .lb-seg{flex:1;border:none;cursor:pointer;padding:9px 10px;border-radius:8px;font-weight:800;font-size:14px;
+    color:var(--sig-dim);background:transparent;transition:all .15s}
+  .lb-seg:hover{color:var(--sig)}
+  .lb-seg.lb-active{background:var(--accent,#ffd23f);color:#1a1a22;box-shadow:0 2px 6px rgba(0,0,0,0.25)}
   /* ===== ITEM SHOP ===== */
   .shop-card{width:min(680px,94%)}
   .shop-layout{display:flex;gap:18px;align-items:stretch}
@@ -200,6 +206,10 @@
   /* token-gated items */
   .ci.locked{opacity:.78}
   .ci.locked canvas{filter:grayscale(.55) brightness(.8)}
+  .ci.mystery{opacity:1;background:#070a0e;border-color:#1d2530}
+  .ci.mystery canvas{filter:none}
+  .ci.mystery .ci-name{color:#54616e;letter-spacing:2px}
+  .ci.mystery .ci-req{background:#1a2230;color:#8a97a6}
   .ci .ci-req{font-size:8px;letter-spacing:.3px;color:#ffce3e;background:#2a2410;
     border:1px solid #5a4a18;border-radius:5px;padding:1px 5px;margin-top:1px}
   .ci .ci-req.owned{color:var(--live);background:#10240f;border-color:#1c5a1c}
@@ -345,8 +355,7 @@
     </div>
     <button class="tab active" data-tab="lobby"><span class="ic">🏠</span><span class="label">Home</span></button>
     <button class="tab" data-tab="shop"><span class="ic">🛍️</span><span class="label">Item Shop</span></button>
-    <button class="tab" data-tab="board"><span class="ic">🏆</span><span class="label">High Scores</span></button>
-    <button class="tab" data-tab="wins"><span class="ic">⚔️</span><span class="label">1v1 Wins</span></button>
+    <button class="tab" data-tab="board"><span class="ic">🏆</span><span class="label">Leaderboard</span></button>
     <button class="tab vs-tab" id="vsTab"><span class="ic">⚔️</span><span class="label">1v1</span></button>
     <button class="tab" data-tab="settings"><span class="ic">⚙️</span><span class="label">Settings</span></button>
     <div class="spacer"></div>
@@ -431,20 +440,26 @@
       <div class="panel" id="panel-board">
         <div class="panel-card">
           <span class="panel-close" data-close>✕</span>
-          <h3>🏆 High Score Leaderboard</h3>
-          <div class="sub" id="boardSub">Daily high score · resets every 24h</div>
-          <table id="board"></table>
-          <div class="note" id="boardNote">Hold the entry threshold of FLAP to compete. Resets every 24h. Top daily finishers earn <b>exclusive character skins</b>. Casual runs aren't recorded.</div>
-        </div>
-      </div>
+          <h3>🏆 Leaderboard</h3>
+          <!-- sub-tab toggle: High Score vs 1v1 -->
+          <div class="lb-toggle">
+            <button class="lb-seg lb-active" id="lbSegHigh">🏆 High Score</button>
+            <button class="lb-seg" id="lbSegWins">⚔️ 1v1</button>
+          </div>
 
-      <div class="panel" id="panel-wins">
-        <div class="panel-card">
-          <span class="panel-close" data-close>✕</span>
-          <h3>⚔️ 1v1 Wins Leaderboard</h3>
-          <div class="sub" id="winsSub">Daily 1v1 wins · resets every 24h</div>
-          <table id="winsboard"></table>
-          <div class="note">Free to enter — anyone signed in can compete. Resets every 24h. Top daily winners are eligible for <b>Solana (SOL) prizes</b>, awarded by the team. Sign in with your wallet so your wins count.</div>
+          <!-- HIGH SCORE view -->
+          <div id="lbViewHigh">
+            <div class="sub" id="boardSub">Daily high score · resets every 24h</div>
+            <table id="board"></table>
+            <div class="note" id="boardNote">Hold the entry threshold of FLAP to compete. Resets every 24h. Top daily finishers earn <b>exclusive character skins</b>. Casual runs aren't recorded.</div>
+          </div>
+
+          <!-- 1v1 view -->
+          <div id="lbViewWins" style="display:none">
+            <div class="sub" id="winsSub">Daily 1v1 wins · resets every 24h</div>
+            <table id="winsboard"></table>
+            <div class="note">Hold <b>250,000 FLAP</b> to unlock 1v1. Resets every 24h. Top daily winners earn <b>exclusive character skins</b>. Sign in with your wallet so your wins count.</div>
+          </div>
         </div>
       </div>
 
@@ -1830,6 +1845,38 @@ function saveScore(name,score){
   localStorage.setItem(roundKey(),JSON.stringify(b)); renderBoard();
 }
 let WINS_BOARD=null;            // last fetched wins board
+// ---- live countdown ticker for the Leaderboard panel ----
+function fmtCountdown(ms){
+  if(ms<0) ms=0;
+  const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000), s=Math.floor((ms%60000)/1000);
+  const pad=n=>String(n).padStart(2,'0');
+  return pad(h)+':'+pad(m)+':'+pad(s);
+}
+function lbRemainingMs(which){
+  // prefer server-provided remainingMs; fall back to local season math
+  if(which==='wins' && API && WINS_BOARD && WINS_BOARD.remainingMs!=null) return WINS_BOARD.remainingMs - (Date.now()-(WINS_BOARD._fetchedAt||Date.now()));
+  if(which==='high' && API && SERVER_BOARD && SERVER_BOARD.remainingMs!=null) return SERVER_BOARD.remainingMs - (Date.now()-(SERVER_BOARD._fetchedAt||Date.now()));
+  return seasonEndsAt()-Date.now();
+}
+let _lbTick=null;
+function startLbCountdown(){
+  stopLbCountdown();
+  const upd=()=>{
+    const highVis = $('lbViewHigh') && $('lbViewHigh').style.display!=='none';
+    const ms = lbRemainingMs(highVis?'high':'wins');
+    const sub = highVis ? $('boardSub') : $('winsSub');
+    if(sub){
+      const label = highVis ? 'High Score' : '1v1 wins';
+      sub.innerHTML = 'Daily '+label+' · resets in <b style="color:var(--sig,#ffd23f);font-variant-numeric:tabular-nums">'+fmtCountdown(ms)+'</b>';
+    }
+    // when it hits zero, the season has rolled — reload the fresh (empty) board + new winner
+    if(ms<=0){
+      if(API){ loadServerBoard().then(renderBoard); loadWinsBoard().then(renderWinsBoard); }
+    }
+  };
+  upd(); _lbTick=setInterval(upd,1000);
+}
+function stopLbCountdown(){ if(_lbTick){ clearInterval(_lbTick); _lbTick=null; } }
 function renderBoard(){
   const sub=$('boardSub');
   // ---- HIGH SCORE board (server) ----
@@ -2455,7 +2502,7 @@ function die(){
     const fl=(CHARACTERS[LOADOUT.character]||{}).flight||'flap';
     if(serverActive()){
       // SERVER MODE: submit to the shared board, then refresh rank + board
-      submitServerScore(score,dur,fl).then(()=>{ loadServerBoard().then(()=>{ if($('panel-board')&&$('panel-board').classList.contains('open')) renderBoard(); }); refreshHoldings(); });
+      submitServerScore(score,dur,fl).then(()=>{ loadServerBoard().then(()=>{ if($('panel-board')&&$('panel-board').classList.contains('open')&&(!$('lbViewHigh')||$('lbViewHigh').style.display!=='none')) renderBoard(); }); refreshHoldings(); });
     } else {
       saveScore(myName,score); updateBestRank(); refreshHoldings();   // local prototype
     }
@@ -2944,11 +2991,24 @@ buildMapPicker();
 /* ---------- ITEM SHOP ---------- */
 let shopCat='character';
 // draw a small bird preview into a tile canvas with a specific override
-function drawTilePreview(canvas, overrides){
+function drawTilePreview(canvas, overrides, silhouette){
   const c=canvas.getContext('2d'); const W=canvas.width,Hh=canvas.height;
   c.clearRect(0,0,W,Hh);
   c.save(); c.translate(W/2,Hh/2+2); c.scale(1.32,1.32);   // fits wider creatures
-  drawBirdSprite(c, Object.assign({clock:performance.now(), flapUp:true}, overrides));
+  if(silhouette){
+    // draw the sprite, then paint the whole thing as a dark silhouette for mystery
+    drawBirdSprite(c, Object.assign({clock:performance.now(), flapUp:true}, overrides));
+    c.globalCompositeOperation='source-atop';
+    c.fillStyle='#14121c';
+    c.fillRect(-40,-40,80,80);
+    c.globalCompositeOperation='source-over';
+    // subtle question mark
+    c.fillStyle='rgba(255,255,255,0.30)';
+    c.font='bold 16px Arial'; c.textAlign='center'; c.textBaseline='middle';
+    c.fillText('?',0,1);
+  } else {
+    drawBirdSprite(c, Object.assign({clock:performance.now(), flapUp:true}, overrides));
+  }
   c.restore();
 }
 function buildShop(){
@@ -2965,7 +3025,8 @@ function buildShop(){
     const isRank=!!(item && item.rank);
     const gated = isRank || reqAmount(item)>0;
     const unlocked=isUnlocked(item, id);
-    const tile=document.createElement('div'); tile.className='ci'+(id===sel?' sel':'')+(unlocked?'':' locked')+(isRank?' rank':'');
+    const relLocked = shopCat==='character' && releaseLockedChar(id);   // mystery character
+    const tile=document.createElement('div'); tile.className='ci'+(id===sel?' sel':'')+(unlocked?'':' locked')+(isRank?' rank':'')+(relLocked?' mystery':'');
     const tc=document.createElement('canvas'); tc.width=54; tc.height=54;
     // preview = the rest of the current loadout, with THIS slot swapped to `id`
     const ov={
@@ -2974,11 +3035,21 @@ function buildShop(){
     };
     if(key==='color') ov.palette=lib[id];
     else ov[key]=id;
-    drawTilePreview(tc, ov);
-    const nm=document.createElement('div'); nm.className='ci-name'; nm.textContent=item.name;
+    if(relLocked){
+      // mystery silhouette: render THIS character as a shadow (not your loadout)
+      drawTilePreview(tc, {character:id, hat:'none', costume:'none', palette:curPalette()}, true);
+    } else {
+      drawTilePreview(tc, ov);
+    }
+    const nm=document.createElement('div'); nm.className='ci-name'; nm.textContent= relLocked ? '???' : item.name;
     tile.appendChild(tc); tile.appendChild(nm);
     // requirement / lock badge for gated items
-    if(gated){
+    if(relLocked){
+      const badge=document.createElement('div');
+      badge.className='ci-req';
+      badge.textContent='🔒 Coming soon';
+      tile.appendChild(badge);
+    } else if(gated){
       const onTrack = isRank && !unlocked && rankOnTrack(item);
       const badge=document.createElement('div');
       badge.className='ci-req'+(unlocked?' owned':'')+(isRank?' rankbadge':'')+(onTrack?' ontrack':'');
@@ -2988,6 +3059,12 @@ function buildShop(){
       tile.appendChild(badge);
     }
     tile.addEventListener('click',()=>{
+      if(relLocked){
+        // tease without revealing
+        const h=$('holdHint'); if(h){ h.textContent='A mystery character — revealed soon. Stay tuned! 👀'; h.classList.add('show'); setTimeout(()=>h.classList.remove('show'),2600); }
+        if(SOUND.enabled){ try{audio()&&audio().resume();}catch(e){} beep(300,0.08,'sine',0.4,200); }
+        return;
+      }
       if(!unlocked){
         flashHoldHint(item);   // explain requirement
         if(SOUND.enabled){ try{audio()&&audio().resume();}catch(e){} beep(240,0.10,'sawtooth',0.5,160); }
@@ -3182,6 +3259,7 @@ async function loadServerBoard(){
   if(!API) return null;
   try{
     const d=await fetch(API+'/leaderboard?limit=100').then(r=>r.json());
+    if(d) d._fetchedAt=Date.now();
     SERVER_BOARD=d; return d;
   }catch(e){ console.warn('board fetch failed',e); return null; }
 }
@@ -3189,6 +3267,7 @@ async function loadWinsBoard(){
   if(!API) return null;
   try{
     const d=await fetch(API+'/leaderboard/wins?limit=100').then(r=>r.json());
+    if(d) d._fetchedAt=Date.now();
     WINS_BOARD=d; return d;
   }catch(e){ console.warn('wins board fetch failed',e); return null; }
 }
@@ -3247,8 +3326,22 @@ function vsLocked(){ return vsControlLockUntil>0 && performance.now()<vsControlL
 let oppState={ y:300, vy:0, rot:0, score:0, alive:true, ty:300 };
 
 // public: start matchmaking
+const VS_UNLOCK_THRESHOLD = 250000;   // hold 250k FLAP to access 1v1
+function vsUnlocked(){
+  // dev/local: allow if DEV_UNLOCKS or no token configured yet
+  if(typeof DEV_UNLOCKS!=='undefined' && DEV_UNLOCKS) return true;
+  if(!TOKEN.mint && !API) return true;
+  const bal = (TOKEN_BALANCE==null) ? 0 : TOKEN_BALANCE;
+  return bal >= VS_UNLOCK_THRESHOLD;
+}
 function vsFindMatch(){
   if(!API){ vsToast('Online play needs the backend (set API).'); return; }
+  // ---- 250k FLAP hold-gate for 1v1 access ----
+  if(!vsUnlocked()){
+    const have = (TOKEN_BALANCE==null)?0:TOKEN_BALANCE;
+    vsToast('Hold 250,000 FLAP to unlock 1v1 (you have '+fmtBal(have)+'). Connect your wallet & top up to play.');
+    return;
+  }
   // close the lobby stats socket — the match socket will receive stats instead
   try{ if(STATSWS){ STATSWS.onclose=null; STATSWS.close(); STATSWS=null; } }catch(e){}
   vsSetScreen('queue','Finding an opponent…');
@@ -3270,6 +3363,12 @@ function vsFindMatch(){
 
 function handleVSMessage(m){
   switch(m.t){
+    case 'gated':
+      // server rejected 1v1 access (not signed in or below 250k hold)
+      vsSetScreen('error', m.message || 'Hold 250,000 FLAP to play 1v1.');
+      try{ if(VSWS){ VSWS.onclose=null; VSWS.close(); VSWS=null; } }catch(e){}
+      cleanupVS();
+      return;
     case 'stats':
       VS_STATS.online = m.online||0; VS_STATS.queue = m.queue||0;
       updateLobbyStats();
@@ -3410,7 +3509,7 @@ function showVSResult(won,you,opp,counted){
   $('vsAgain').addEventListener('click',()=>{ cleanupVS(); vsFindMatch(); });
   $('vsExit').addEventListener('click',vsLeave);
   // refresh the wins board so a counted win shows up immediately
-  if(counted && typeof loadWinsBoard==='function') loadWinsBoard().then(()=>{ if(typeof renderWinsBoard==='function' && $('panel-wins') && $('panel-wins').classList.contains('open')) renderWinsBoard(); });
+  if(counted && typeof loadWinsBoard==='function') loadWinsBoard().then(()=>{ if(typeof renderWinsBoard==='function' && $('panel-board') && $('panel-board').classList.contains('open') && $('lbViewWins') && $('lbViewWins').style.display!=='none') renderWinsBoard(); });
   state='idle'; if(MUSIC.enabled && SOUND.enabled) musStart();
 }
 function vsToast(msg){
@@ -3452,6 +3551,22 @@ try{ const s=parseFloat(localStorage.getItem('flappy_simbal')||'0'); if(!isNaN(s
 // is LOCAL ONLY — it never touches the real server or other players. Set to false
 // before a real release so the server's verified balance controls unlocks.
 let DEV_UNLOCKS = false;
+// ---- RELEASE GATING ----
+// At launch we only reveal TWO playable characters; everything else is a locked
+// "mystery" silhouette to build suspense. Set RELEASE_LOCK=false later (or expand
+// the list) to roll out more. This only affects CHARACTERS, not colors/hats/costumes.
+const RELEASE_LOCK = true;
+const RELEASE_CHARACTERS = ['bird','sub'];   // the only characters playable at release
+function releaseLockedChar(id){
+  return RELEASE_LOCK && !DEV_UNLOCKS && !RELEASE_CHARACTERS.includes(id);
+}
+// safety: if a previously-equipped character is now release-locked, revert to bird
+try{
+  if(LOADOUT && LOADOUT.character && releaseLockedChar(LOADOUT.character)){
+    LOADOUT.character='bird';
+    try{ localStorage.setItem('flappy_loadout', JSON.stringify(LOADOUT)); }catch(e){}
+  }
+}catch(e){}
 try{ const d=localStorage.getItem('flappy_devunlocks'); if(d==='0') DEV_UNLOCKS=false; if(d==='1') DEV_UNLOCKS=true; }catch(e){}
 
 // the wallet's current holding of the coin (whole tokens). null = unknown yet.
@@ -3563,6 +3678,9 @@ function rankOnTrack(item){
 const FREE_PLAY = false;
 function isUnlocked(item, id){
   if(!item) return true;
+  // RELEASE LOCK: at launch only the allowed characters are playable; the rest
+  // stay locked (shown as mystery silhouettes) regardless of holdings/tier.
+  if(id && CHARACTERS[id] && releaseLockedChar(id)) return false;
   if(FREE_PLAY) return true;                     // everything unlocked for play/testing
   const gated = !!(item.rank) || reqAmount(item)>0;
   if(!gated) return true;                       // free items always unlocked
@@ -3691,16 +3809,39 @@ $('namebox').addEventListener('input',e=>setMyName(e.target.value));
 function openTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
   // 'lobby' = no panel (just the lobby/game screen). others open a modal panel.
-  ['board','wins','shop','settings'].forEach(p=>{
+  ['board','shop','settings'].forEach(p=>{
     const el=$('panel-'+p); if(el) el.classList.toggle('open', p===name);
   });
-  if(name==='board'){ if(API){ loadServerBoard().then(renderBoard); } renderBoard(); }
-  if(name==='wins'){ if(API){ loadWinsBoard().then(renderWinsBoard); } renderWinsBoard(); }
+  if(name==='board'){
+    // Leaderboard panel hosts BOTH boards via the sub-tab toggle — load both.
+    if(API){ loadServerBoard().then(renderBoard); loadWinsBoard().then(renderWinsBoard); }
+    renderBoard(); renderWinsBoard();
+    if(typeof lbShow==='function') lbShow('high');   // default to High Score view
+    if(typeof startLbCountdown==='function') startLbCountdown();
+  } else {
+    if(typeof stopLbCountdown==='function') stopLbCountdown();
+  }
   if(name==='shop'){ refreshHoldings(); buildShop(); updateHoldingsUI(); requestAnimationFrame(shopPreviewLoop); }
   if(SOUND.enabled){ try{audio()&&audio().resume();}catch(e){} beep(560,0.05,'triangle',0.4); }
   // lobby/menus: make sure the soundtrack is playing and at full volume
   if(name==='lobby' && MUSIC.enabled && SOUND.enabled && !MUSIC.playing){ musStart(); }
 }
+// leaderboard sub-tab toggle (High Score <-> 1v1)
+function lbShow(which){
+  const high = which==='high';
+  const vH=$('lbViewHigh'), vW=$('lbViewWins'), sH=$('lbSegHigh'), sW=$('lbSegWins');
+  if(vH) vH.style.display = high?'':'none';
+  if(vW) vW.style.display = high?'none':'';
+  if(sH) sH.classList.toggle('lb-active', high);
+  if(sW) sW.classList.toggle('lb-active', !high);
+  // refresh the visible board
+  if(high){ if(API) loadServerBoard().then(renderBoard); else renderBoard(); }
+  else    { if(API) loadWinsBoard().then(renderWinsBoard); else renderWinsBoard(); }
+  if(typeof startLbCountdown==='function') startLbCountdown();   // re-point ticker at the visible board
+}
+{ const a=$('lbSegHigh'), b=$('lbSegWins');
+  if(a) a.addEventListener('click',()=>lbShow('high'));
+  if(b) b.addEventListener('click',()=>lbShow('wins')); }
 document.querySelectorAll('.tab').forEach(t=> t.addEventListener('click',()=>{ if(t.dataset.tab) openTab(t.dataset.tab); }) );
 { const vt=$('vsTab'); if(vt) vt.addEventListener('click',()=>{ if(typeof vsFindMatch==='function') vsFindMatch(); }); }
 document.querySelectorAll('[data-close]').forEach(x=> x.addEventListener('click',()=>openTab('lobby')) );
@@ -3967,8 +4108,11 @@ finaliseSeasonIfNeeded(); computeLiveRank();   // roll over any finished season,
 refreshHoldings();   // read coin balance (sim or real) and gate the shop
 // keep the season countdown fresh while the leaderboard is open
 setInterval(()=>{
-  if($('panel-board') && $('panel-board').classList.contains('open')){ if(API) loadServerBoard().then(renderBoard); else renderBoard(); }
-  if($('panel-wins') && $('panel-wins').classList.contains('open')){ if(API) loadWinsBoard().then(renderWinsBoard); else renderWinsBoard(); }
+  if($('panel-board') && $('panel-board').classList.contains('open')){
+    const winsVisible = $('lbViewWins') && $('lbViewWins').style.display!=='none';
+    if(winsVisible){ if(API) loadWinsBoard().then(renderWinsBoard); else renderWinsBoard(); }
+    else { if(API) loadServerBoard().then(renderBoard); else renderBoard(); }
+  }
 }, 60000);
 
 // ===== TWEAK ZONE 8: LOADING SCREEN =====
