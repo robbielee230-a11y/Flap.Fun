@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS vs_wins (
 CREATE INDEX IF NOT EXISTS vs_wins_season_rank
   ON vs_wins (season_id, wins DESC, updated_at ASC);
 
+
 -- short-lived sign-in challenges (proof of wallet ownership)
 CREATE TABLE IF NOT EXISTS nonces (
   wallet     TEXT PRIMARY KEY,
