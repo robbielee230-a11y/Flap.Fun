@@ -124,50 +124,34 @@ export function attachChat(httpServer) {
       let msg; try { msg = JSON.parse(raw.toString()); } catch { return; }
 
       if (msg.t === 'auth') {
-        // identify via session token, then check they HOLD any FLAP to chat
-        ws._wallet = msg.session ? verifySessionToken(msg.session) : null;
-        ws._name = String(msg.name || 'Player').slice(0, 14).replace(/[<>]/g, '');
-        ws._canPost = false;
-        (async () => {
-          if (!ws._wallet) {
-            send(ws, { t: 'authed', canPost: false, reason: 'signin_required' });
-            return;
-          }
-          // if a token is configured, require a positive balance; otherwise (dev) allow
-          if (CONFIG.TOKEN_MINT) {
-            let bal = 0;
-            try { bal = await getBalance(ws._wallet); } catch (e) { bal = 0; }
-            ws._canPost = bal > 0;
-            send(ws, { t: 'authed', canPost: ws._canPost,
-              reason: ws._canPost ? 'ok' : 'need_hold',
-              message: ws._canPost ? undefined : 'Hold any FLAP to chat.' });
-          } else {
-            ws._canPost = true;
-            send(ws, { t: 'authed', canPost: true });
-          }
-        })();
+        // OPEN CHAT: anyone can post. We just take a display name. (Optional session
+        // is still read if present, only to show a nicer name — not required.)
+        const w = msg.session ? verifySessionToken(msg.session) : null;
+        ws._wallet = w;
+        ws._name = String(msg.name || 'Player').slice(0, 14).replace(/[<>]/g, '') || 'Player';
+        ws._canPost = true;
+        send(ws, { t: 'authed', canPost: true });
         return;
       }
 
       if (msg.t === 'say') {
-        // must be signed in AND hold FLAP
-        if (!ws._wallet) { send(ws, { t: 'blocked', reason: 'signin_required',
-          message: 'Sign in with your wallet to chat.' }); return; }
-        if (!ws._canPost) { send(ws, { t: 'blocked', reason: 'need_hold',
-          message: 'Hold any FLAP to chat.' }); return; }
-        if (muted().has(ws._wallet)) { send(ws, { t: 'blocked', reason: 'muted',
+        // open chat — anyone may post. (mute list + filters still apply.)
+        const id = ws._wallet || ws._name;
+        if (muted().has(id)) { send(ws, { t: 'blocked', reason: 'muted',
           message: 'You are muted.' }); return; }
 
         const text = clean(msg.text);
         if (!text) return;
-        if (!rateOk(ws._wallet)) { send(ws, { t: 'blocked', reason: 'rate',
+        const rlKey = ws._wallet || ws._name || 'anon';
+        if (!rateOk(rlKey)) { send(ws, { t: 'blocked', reason: 'rate',
           message: 'Slow down a moment.' }); return; }
         if (hasLinkOrAddress(text)) { send(ws, { t: 'blocked', reason: 'link',
           message: 'Links and wallet addresses aren’t allowed in chat.' }); return; }
         if (hasBlockedWord(text)) { send(ws, { t: 'blocked', reason: 'filtered',
           message: 'That message was blocked by the filter.' }); return; }
 
-        const entry = { name: ws._name, wallet: ws._wallet.slice(0,4)+'…'+ws._wallet.slice(-4),
+        const entry = { name: ws._name,
+                        wallet: ws._wallet ? (ws._wallet.slice(0,4)+'…'+ws._wallet.slice(-4)) : '',
                         text, ts: Date.now() };
         history.push(entry);
         if (history.length > HISTORY) history.shift();
