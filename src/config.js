@@ -25,6 +25,8 @@ export const CONFIG = {
   TIERS: { t1: 100, t2: 1000, t3: 10000, t4: 50000, t5: 250000, t6: 1000000 },
   // FLAP a wallet must HOLD to rank on the high-score board (held, not spent).
   HIGHSCORE_ENTRY_THRESHOLD: parseInt(process.env.HIGHSCORE_ENTRY_THRESHOLD || '100', 10),
+  // hold this many FLAP to access 1v1 (skin prizes). Default 250k.
+  VS_UNLOCK_THRESHOLD: parseInt(process.env.VS_UNLOCK_THRESHOLD || '250000', 10),
 
   // rank tiers (required final placement -> tier). Mirror the game's RANK.
   RANKS: { r1: 1, r3: 3, r10: 10, r30: 30, r100: 100 },
@@ -70,3 +72,4 @@ export function seasonId(now = Date.now()) {
 export function seasonBounds(id = seasonId()) {
   return { start: id * CONFIG.SEASON_MS, end: (id + 1) * CONFIG.SEASON_MS };
 }
+
