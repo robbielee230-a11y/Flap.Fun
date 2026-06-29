@@ -376,7 +376,6 @@
     <div class="spacer"></div>
     <div class="pill" id="onlinePill" style="display:none"><span class="dot-live"></span>0 online</div>
     <div class="pill hi-pill" id="hiPill"><span class="ic">🏆</span>BEST <b id="hiVal">0</b></div>
-    <div class="pill" id="rankPill" style="display:none"><span id="rankPillText">Unranked</span></div>
     <div class="pill" id="navMode">CASUAL</div>
     <div class="pill" id="holdPill" style="display:none">💰 <b id="holdPillVal">—</b> FLAPP</div>
     <button class="tab wallet-btn" id="walletBtn"><span class="ic">👻</span><span id="walletLabel">Connect Wallet</span></button>
@@ -3208,7 +3207,6 @@ function onWalletChange(){
   } else {
     if(typeof serverSignOut==='function') serverSignOut();
     if(typeof refreshHoldings==='function') refreshHoldings();
-    if(typeof MY_RANK!=='undefined'){ MY_RANK=null; if(typeof renderRankPill==='function') renderRankPill(); }
   }
 }
 // wallet button: connect if disconnected, offer disconnect if connected
@@ -3278,7 +3276,7 @@ async function serverSignIn(){
     const sigBytes=sig.signature||sig;     // Phantom returns {signature:Uint8Array}
     const v=await fetch(API+'/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({wallet:WALLET.pubkey, signature:bs58enc(sigBytes), nonce:n.nonce})}).then(r=>r.json());
-    if(v.session){ SESSION=v.session; if(typeof applyMode==='function') applyMode(); await refreshHoldings(); if(typeof loadMyRank==='function') loadMyRank(); }
+    if(v.session){ SESSION=v.session; if(typeof applyMode==='function') applyMode(); await refreshHoldings(); }
     else { console.warn('sign-in rejected:', v && (v.error||v.reason||JSON.stringify(v))); }
   }catch(e){ console.warn('server sign-in failed',e); }
   finally{ _signingIn=false; }
@@ -3294,50 +3292,6 @@ async function loadServerBoard(){
     SERVER_BOARD=d; return d;
   }catch(e){ console.warn('board fetch failed',e); return null; }
 }
-// ---- WEEKLY RANKED LADDER (client) ----
-let MY_RANK = null;   // {legend,tier,division,stars,starsPerDiv,label,wins,losses}
-const RANK_COLORS = {
-  Bronze:'#cd7f3f', Silver:'#c7cdd6', Gold:'#ffd23f',
-  Platinum:'#7fe0d6', Diamond:'#7fb4ff', Legend:'#ff7ad6'
-};
-function rankPillHTML(r){
-  if(!r) return 'Unranked';
-  const col = RANK_COLORS[r.tier] || '#fff';
-  if(r.legend){
-    return '<span style="color:'+col+';font-weight:800;letter-spacing:1px">★ LEGEND</span>';
-  }
-  const filled = r.stars||0, total = r.starsPerDiv||5;
-  let stars='';
-  for(let i=0;i<total;i++) stars += '<span style="color:'+(i<filled?col:'rgba(255,255,255,0.22)')+'">★</span>';
-  return '<span style="color:'+col+';font-weight:700">'+r.tier+' '+r.division+'</span> <span style="font-size:11px">'+stars+'</span>';
-}
-function renderRankPill(){
-  const pill=$('rankPill'), txt=$('rankPillText');
-  if(!pill||!txt) return;
-  if(!API || (!SESSION && !walletConnected())){ pill.style.display='none'; return; }
-  pill.style.display='';
-  txt.innerHTML = rankPillHTML(MY_RANK);
-}
-async function loadMyRank(){
-  if(!API || !SESSION) { MY_RANK=null; renderRankPill(); return; }
-  try{
-    const r = await fetch(API+'/me/ladder',{headers:{'Authorization':'Bearer '+SESSION}}).then(x=>x.json());
-    if(r && !r.error){ MY_RANK=r; renderRankPill(); }
-  }catch(e){ /* leave as-is */ }
-}
-// called when a match result arrives with a new rank
-function onRankUpdate(r){
-  if(!r) return;
-  const prev = MY_RANK;
-  MY_RANK = r; renderRankPill();
-  // little toast on rank change
-  if(prev && r){
-    if(r.legend && !prev.legend){ vsToast('⭐ You hit LEGEND!'); }
-    else if(r.points>prev.points){ vsToast('▲ Rank up — '+(r.label||'')); }
-    else if(r.points<prev.points){ vsToast('▼ '+(r.label||'')); }
-  }
-}
-
 async function loadWinsBoard(){
   if(!API) return null;
   try{
@@ -3491,9 +3445,6 @@ function vsFindMatch(){
 
 function handleVSMessage(m){
   switch(m.t){
-    case 'rankUpdate':
-      if(typeof onRankUpdate==='function') onRankUpdate(m.rank);
-      return;
     case 'gated':
       // server rejected 1v1 access (not signed in or below 250k hold)
       vsSetScreen('error', m.message || 'Hold 250,000 FLAP to play 1v1.');
