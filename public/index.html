@@ -482,13 +482,13 @@
         <div class="panel-card">
           <span class="panel-close" data-close>✕</span>
           <h3>💬 Global Chat</h3>
-          <div class="sub">Be kind. Links &amp; wallet addresses are blocked. Sign in to post.</div>
+          <div class="sub">Be kind. Links &amp; wallet addresses are blocked. Hold any FLAP to post.</div>
           <div id="chatLog" class="chat-log"></div>
           <div class="chat-input-row">
             <input id="chatInput" type="text" maxlength="240" placeholder="Sign in to chat…" disabled autocomplete="off">
             <button id="chatSend" class="chat-send" disabled>Send</button>
           </div>
-          <div class="note" id="chatNote">Chat is for signed-in players. Keep it respectful — slurs, scams, links and wallet addresses are filtered automatically.</div>
+          <div class="note" id="chatNote">Hold any FLAP to chat. Keep it respectful — slurs, scams, links and wallet addresses are filtered automatically.</div>
         </div>
       </div>
 
@@ -3276,7 +3276,7 @@ async function serverSignIn(){
     const sigBytes=sig.signature||sig;     // Phantom returns {signature:Uint8Array}
     const v=await fetch(API+'/auth/verify',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({wallet:WALLET.pubkey, signature:bs58enc(sigBytes), nonce:n.nonce})}).then(r=>r.json());
-    if(v.session){ SESSION=v.session; if(typeof applyMode==='function') applyMode(); await refreshHoldings(); }
+    if(v.session){ SESSION=v.session; if(typeof applyMode==='function') applyMode(); await refreshHoldings(); if(typeof chatAuth==='function') chatAuth(); }
     else { console.warn('sign-in rejected:', v && (v.error||v.reason||JSON.stringify(v))); }
   }catch(e){ console.warn('server sign-in failed',e); }
   finally{ _signingIn=false; }
@@ -3353,18 +3353,34 @@ function chatSetEnabled(on){
   if(inp){ inp.disabled=!on; inp.placeholder = on?'Say something…':'Sign in to chat…'; }
   if(btn) btn.disabled=!on;
 }
+function chatAuth(){
+  // (re)send our identity to the chat server so posting unlocks once signed in
+  if(CHATWS && CHATWS.readyState===1){
+    CHATWS.send(JSON.stringify({t:'auth', name:myName, session:SESSION||null}));
+  }
+}
 function chatConnect(){
   if(!API){ chatAdd({sys:true,text:'Chat needs the backend.'}); return; }
-  if(CHATWS && (CHATWS.readyState===0||CHATWS.readyState===1)) return; // already connected
+  if(CHATWS && (CHATWS.readyState===0||CHATWS.readyState===1)){ chatAuth(); return; }
   try{ CHATWS=new WebSocket(chatURL()); }catch(e){ return; }
   CHATWS.onopen=()=>{
     // identify ourselves so we can post (read works regardless)
-    CHATWS.send(JSON.stringify({t:'auth', name:myName, session:SESSION||null}));
+    chatAuth();
+    // if not signed in yet, nudge the user
+    if(!SESSION){
+      chatAdd({sys:true,text:'Connect your wallet & approve the signature to chat.'});
+    }
   };
   CHATWS.onmessage=(ev)=>{
     let m; try{ m=JSON.parse(ev.data); }catch{ return; }
     if(m.t==='history'){ const log=$('chatLog'); if(log) log.innerHTML=''; (m.messages||[]).forEach(chatAdd); }
-    else if(m.t==='authed'){ chatSetEnabled(!!m.canPost); if(!m.canPost) chatAdd({sys:true,text:'Sign in with your wallet to post.'}); }
+    else if(m.t==='authed'){
+      chatSetEnabled(!!m.canPost);
+      if(!m.canPost){
+        if(m.reason==='need_hold') chatAdd({sys:true,text:'Hold any FLAP to chat.'});
+        else chatAdd({sys:true,text:'Sign in with your wallet to chat.'});
+      }
+    }
     else if(m.t==='msg'){ chatAdd(m); }
     else if(m.t==='blocked'){ chatAdd({sys:true,text:m.message||'Message blocked.'}); }
   };
