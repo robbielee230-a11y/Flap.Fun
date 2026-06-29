@@ -15,16 +15,18 @@ import crypto from 'crypto';
 import { WebSocketServer } from 'ws';
 import { verifySessionToken } from './auth.js';
 import { recordVsWin } from './leaderboard.js';
- 
+import { getBalance } from './solana.js';
+import { CONFIG } from './config.js';
+
 const QUEUE = [];            // sockets waiting for a match
 const MATCHES = new Map();   // matchId -> match
- 
+
 function send(ws, obj) {
   if (ws && ws.readyState === ws.OPEN) {
     try { ws.send(JSON.stringify(obj)); } catch {}
   }
 }
- 
+
 // broadcast live online + queue counts to every connected client
 function broadcastStats(wss) {
   let online = 0;
@@ -32,7 +34,7 @@ function broadcastStats(wss) {
   const payload = JSON.stringify({ t: 'stats', online, queue: QUEUE.length });
   wss.clients.forEach((c) => { if (c.readyState === c.OPEN) { try { c.send(payload); } catch {} } });
 }
- 
+
 function makeMatch(a, b) {
   const id = crypto.randomBytes(8).toString('hex');
   // 32-bit seed both clients use to generate identical pipes
@@ -48,13 +50,13 @@ function makeMatch(a, b) {
   a._matchId = id; a._side = 0;
   b._matchId = id; b._side = 1;
   MATCHES.set(id, match);
- 
+
   // tell each player about the match + who they're facing + the shared seed
   send(a, { t: 'matched', seed, side: 0, opponent: { name: b._name, character: b._character, color: b._color, hat: b._hat, costume: b._costume } });
   send(b, { t: 'matched', seed, side: 1, opponent: { name: a._name, character: a._character, color: a._color, hat: a._hat, costume: a._costume } });
   return match;
 }
- 
+
 function tryMatchmake() {
   while (QUEUE.length >= 2) {
     const a = QUEUE.shift();
@@ -65,9 +67,9 @@ function tryMatchmake() {
     makeMatch(a, b);
   }
 }
- 
+
 function opponentOf(match, side) { return match.players[side ? 0 : 1]; }
- 
+
 function beginCountdown(match) {
   if (match.countdownStarted) return;
   match.countdownStarted = true;
@@ -84,7 +86,7 @@ function beginCountdown(match) {
   };
   tick();
 }
- 
+
 function endMatch(match, reason) {
   if (match.ended) return;
   match.ended = true;
@@ -111,26 +113,26 @@ function endMatch(match, reason) {
   }
   MATCHES.delete(match.id);
 }
- 
+
 function maybeFinish(match) {
   // match ends when BOTH players are dead
   if (match.players.every(p => !p.alive)) endMatch(match, 'both-dead');
 }
- 
+
 export function attachMultiplayer(httpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
- 
+
   wss.on('connection', (ws) => {
     ws._name = 'Player';
     ws._character = 'bird';
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     broadcastStats(wss);   // someone joined → update everyone's counts
- 
+
     ws.on('message', (raw) => {
       let msg; try { msg = JSON.parse(raw.toString()); } catch { return; }
       const match = ws._matchId ? MATCHES.get(ws._matchId) : null;
- 
+
       switch (msg.t) {
         case 'hello': {
           ws._name = String(msg.name || 'Player').slice(0, 14);
@@ -142,13 +144,34 @@ export function attachMultiplayer(httpServer) {
           // their real wallet. Anonymous players can still play, but their wins
           // won't count toward the prize leaderboard.
           ws._wallet = msg.session ? verifySessionToken(msg.session) : null;
-          // join the matchmaking queue
-          if (!QUEUE.includes(ws) && !ws._matchId) {
-            QUEUE.push(ws);
-            send(ws, { t: 'queued', position: QUEUE.length });
-            tryMatchmake();
-            broadcastStats(wss);   // queue changed
-          }
+          // ---- 250k FLAP hold-gate (server-enforced; client check is bypassable) ----
+          // Only enforced when a token is configured. Must be signed in AND hold the
+          // threshold to access 1v1.
+          (async () => {
+            if (CONFIG.TOKEN_MINT && CONFIG.VS_UNLOCK_THRESHOLD > 0) {
+              if (!ws._wallet) {
+                send(ws, { t: 'gated', reason: 'signin_required',
+                  need: CONFIG.VS_UNLOCK_THRESHOLD,
+                  message: 'Sign in with a wallet holding ' + CONFIG.VS_UNLOCK_THRESHOLD.toLocaleString() + ' FLAP to play 1v1.' });
+                return;
+              }
+              let bal = 0;
+              try { bal = await getBalance(ws._wallet); } catch (e) { bal = 0; }
+              if (bal < CONFIG.VS_UNLOCK_THRESHOLD) {
+                send(ws, { t: 'gated', reason: 'below_threshold',
+                  need: CONFIG.VS_UNLOCK_THRESHOLD, have: bal,
+                  message: 'Hold ' + CONFIG.VS_UNLOCK_THRESHOLD.toLocaleString() + ' FLAP to play 1v1 (you have ' + Math.floor(bal).toLocaleString() + ').' });
+                return;
+              }
+            }
+            // passed the gate (or no token configured) → join the matchmaking queue
+            if (!QUEUE.includes(ws) && !ws._matchId) {
+              QUEUE.push(ws);
+              send(ws, { t: 'queued', position: QUEUE.length });
+              tryMatchmake();
+              broadcastStats(wss);
+            }
+          })();
           break;
         }
         case 'ready': {
@@ -185,11 +208,11 @@ export function attachMultiplayer(httpServer) {
         }
       }
     });
- 
+
     ws.on('close', () => cleanup(ws, 'closed'));
     ws.on('error', () => cleanup(ws, 'error'));
   });
- 
+
   // heartbeat: drop dead connections
   const hb = setInterval(() => {
     wss.clients.forEach((ws) => {
@@ -199,7 +222,7 @@ export function attachMultiplayer(httpServer) {
     });
   }, 30000);
   wss.on('close', () => clearInterval(hb));
- 
+
   function cleanup(ws, why) {
     // remove from queue
     const qi = QUEUE.indexOf(ws);
@@ -214,7 +237,8 @@ export function attachMultiplayer(httpServer) {
     ws._matchId = null;
     broadcastStats(wss);   // someone left → update counts
   }
- 
+
   console.log('[mp] multiplayer WebSocket server attached at /ws');
   return wss;
 }
+
