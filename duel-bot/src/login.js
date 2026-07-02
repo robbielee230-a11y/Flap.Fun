@@ -28,6 +28,13 @@ export async function login(page, context) {
   log.info('Logging in…');
   await page.goto(CONFIG.urls.login, { waitUntil: 'domcontentloaded' });
 
+  // duel.com opens login in a modal — click the button that reveals the form.
+  try {
+    await page.click(S.openLoginButton, { timeout: 8000 });
+  } catch {
+    log.warn('Could not find/open the login button — the form may already be visible.');
+  }
+
   if (!CONFIG.creds.username || !CONFIG.creds.password) {
     log.warn(
       'No credentials set. Log in manually in the open window, then the session ' +

@@ -12,9 +12,20 @@ const bool = (v, d) => (v === undefined || v === '' ? d : v === 'true');
 
 export const CONFIG = {
   urls: {
-    site: process.env.SITE_URL || 'https://example-duel-site.com',
-    login: process.env.LOGIN_URL || 'https://example-duel-site.com/login',
-    duel: process.env.DUEL_URL || 'https://example-duel-site.com/duel',
+    site: process.env.SITE_URL || 'https://duel.com',
+    // duel.com logs in via a MODAL, not a page. We open the site and click the
+    // login button (see selectors.openLoginButton) rather than visiting a URL.
+    login: process.env.LOGIN_URL || 'https://duel.com',
+    // The sportsbook route. duel.com renders BetBy here. Confirm the exact path
+    // in your browser (e.g. /sports or /sportsbook) and set SPORTSBOOK_URL.
+    sportsbook: process.env.SPORTSBOOK_URL || 'https://duel.com/sports',
+  },
+  // What event to bet on. Used to search/filter inside the BetBy widget.
+  target: {
+    // free-text search term typed into BetBy's search (e.g. a player name)
+    search: process.env.EVENT_SEARCH || 'ITF',
+    // the exact market/selection text to click (e.g. a player's name to back)
+    selection: process.env.SELECTION_TEXT || '',
   },
   creds: {
     username: process.env.DUEL_USERNAME || '',
@@ -35,28 +46,43 @@ export const CONFIG = {
   },
 
   // ---------------------------------------------------------------------------
-  // SELECTORS — the only part you MUST tune to your actual site.
-  // Right-click an element in the browser -> Inspect to find good selectors.
-  // Prefer getByRole / text / data-* attributes over brittle CSS class chains.
-  // You can override any of these with an env var of the same UPPER_SNAKE name.
+  // SELECTORS — the part you MUST tune on a live logged-in session.
+  //
+  // Two DOM worlds here:
+  //   (a) duel.com's own page — login modal, balance, the sportsbook container.
+  //   (b) the BetBy iframe — the whole sportsbook: search, events, odds, bet
+  //       slip, place-bet button. These render INSIDE an <iframe>, so the bot
+  //       reaches them via a frame locator (see src/sportsbook.js). BetBy's
+  //       markup is obfuscated, so prefer text-based locators (getByText /
+  //       has-text) over class names, and CAPTURE the working ones locally with
+  //       `npm run inspect`.
+  //
+  // Override any of these with an env var of the same UPPER_SNAKE name.
   // ---------------------------------------------------------------------------
   selectors: {
-    // Login page
-    usernameInput: process.env.SEL_USERNAME || 'input[name="username"], input[type="email"]',
-    passwordInput: process.env.SEL_PASSWORD || 'input[name="password"], input[type="password"]',
+    // --- (a) duel.com page ---
+    // Button that opens the login/auth modal
+    openLoginButton: process.env.SEL_OPEN_LOGIN || 'button:has-text("Sign in"), button:has-text("Log in")',
+    usernameInput: process.env.SEL_USERNAME || 'input[name="username"], input[type="email"], input[name="email"]',
+    passwordInput: process.env.SEL_PASSWORD || 'input[type="password"]',
     loginButton: process.env.SEL_LOGIN_BTN || 'button[type="submit"]',
-    // A selector that only exists AFTER a successful login (used to confirm auth)
-    loggedInMarker: process.env.SEL_LOGGED_IN || '[data-testid="user-balance"], .account-balance',
+    // A selector that only exists AFTER a successful login (confirms auth).
+    // On duel.com the balance/wallet area is a good marker — set precisely.
+    loggedInMarker: process.env.SEL_LOGGED_IN || '[href*="wallet"], [data-cp-id]',
+    balanceText: process.env.SEL_BALANCE || '[data-balance], .balance',
 
-    // Duel / betting page
-    duelButton: process.env.SEL_DUEL_BTN || 'button:has-text("Duel")',
-    stakeInput: process.env.SEL_STAKE_INPUT || 'input[name="amount"], input[name="stake"]',
-    placeBetButton: process.env.SEL_PLACE_BTN || 'button:has-text("Place Bet")',
-    // Final confirm dialog button (the click we skip in DRY_RUN)
-    confirmButton: process.env.SEL_CONFIRM_BTN || 'button:has-text("Confirm")',
-    // Where the current balance is displayed (used for P&L tracking)
-    balanceText: process.env.SEL_BALANCE || '[data-testid="user-balance"], .account-balance',
-    // Optional: result/outcome banner after a duel resolves
-    resultText: process.env.SEL_RESULT || '.duel-result, [data-testid="duel-result"]',
+    // The <iframe> BetBy renders into. Confirm its src substring via `npm run
+    // inspect` — often contains "betby" or an sdk host. Used to get the frame.
+    betbyIframe: process.env.SEL_BETBY_IFRAME || 'iframe[src*="betby"], iframe[id*="betby"], iframe[src*="sptpub"]',
+
+    // --- (b) inside the BetBy iframe (capture these locally!) ---
+    sbSearchInput: process.env.SEL_SB_SEARCH || 'input[type="search"], input[placeholder*="Search" i]',
+    // Clicking an odds/price button adds the selection to the bet slip.
+    sbOddsButton: process.env.SEL_SB_ODDS || '[class*="outcome"], [class*="odd"]',
+    // Bet slip stake input + place button
+    sbStakeInput: process.env.SEL_SB_STAKE || 'input[inputmode="decimal"], input[type="number"]',
+    sbPlaceBetButton: process.env.SEL_SB_PLACE || 'button:has-text("Place bet"), button:has-text("Bet")',
+    // Confirmation inside the slip, if any (the click skipped in DRY_RUN)
+    sbConfirmButton: process.env.SEL_SB_CONFIRM || 'button:has-text("Confirm")',
   },
 };

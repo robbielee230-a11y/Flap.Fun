@@ -1,65 +1,84 @@
 # duel-bot
 
-A Playwright bot that logs into a betting site and places **duel** bets for you,
-with a configurable strategy and hard safety guardrails. It is **config-driven**:
-you adapt it to a specific site by editing selectors/URLs in `config.js` (or via
-env vars) — you don't touch the bot logic.
+Playwright automation for the **duel.com sportsbook** (e.g. ITF tennis). Logs in,
+opens the sportsbook, finds your event, and places a bet — with hard safety
+guardrails and a dry-run default.
 
-> ⚠️ **Read this first.** Automating bets almost always violates a gambling
-> site's Terms of Service and can get your account banned or funds frozen. Only
-> automate your own account, with money you can afford to lose. This tool defaults
-> to `DRY_RUN=true` (simulate, never click final confirm). You own the risk.
+> ⚠️ **Read this.** Automating bets violates most sportsbooks' Terms of Service
+> and can get your account/funds frozen. Automate only your own account, with
+> money you can lose. Defaults to `DRY_RUN=true` (arms the bet slip, never places).
+> You own the risk.
+
+## How duel.com's sportsbook actually works (important)
+
+I read duel.com's JavaScript to map this out:
+
+- **Login is a modal** on the homepage (`AuthModal`), not a `/login` page. The bot
+  clicks a "Sign in" button to open it.
+- **The sportsbook is [BetBy](https://betby.com)**, a third-party provider. duel.com
+  fetches a BetBy JWT from `api/v2/match-betting/betby` and boots the widget with
+  `new BTRenderer().initialize({ brand_id, token, ... })`.
+- **Everything you bet on lives inside a BetBy `<iframe>`** — the search box, the
+  event list, the odds buttons, and the bet slip. So the bot drives that *frame*,
+  not the top-level page (see `src/sportsbook.js`, `page.frameLocator`).
+- BetBy's markup is **obfuscated and operator-specific**, so there are no clean
+  `data-testid`s. Prefer **text-based** locators and capture the working ones on a
+  live session with `npm run inspect`.
 
 ## Setup
 
 ```bash
 cd duel-bot
-npm install                 # also installs the Chromium browser
-cp .env.example .env        # then edit .env
+npm install                 # installs Playwright + Chromium
+cp .env.example .env        # then edit
 ```
-
-Edit `.env`:
-- `SITE_URL`, `LOGIN_URL`, `DUEL_URL` — the site you're targeting.
-- Selectors (`SEL_*`) — tune these to the real page (Inspect element in the
-  browser). Defaults are generic guesses and almost certainly need changing.
-- Guardrails — `STAKE`, `MAX_STAKE`, `MAX_BETS`, `STOP_LOSS`, `TAKE_PROFIT`.
 
 ## Usage
 
 ```bash
-# 1. Log in once (opens a real window so you can solve 2FA/captcha by hand).
-#    The session is saved to .auth/state.json so you don't log in every run.
+# 1. Log in once, in a real window (solve any Cloudflare/2FA by hand).
+#    Session is saved to .auth/state.json so later runs skip login.
 HEADLESS=false npm run login
 
-# 2. Dry run — does everything except the final "confirm" click. Watch it work.
+# 2. Capture the real selectors from inside the BetBy iframe.
+#    Prints the frames + the buttons/inputs inside BetBy. Copy the good ones
+#    into .env as SEL_SB_* (and SEL_BETBY_IFRAME if the default doesn't match).
+HEADLESS=false npm run inspect
+
+# 3. Dry run — searches your event, arms the bet slip, but never places.
 npm run dry
 
-# 3. Go live — only after the dry run behaves. Flip DRY_RUN=false in .env.
+# 4. Go live — only after the dry run behaves. Set DRY_RUN=false in .env.
 npm start
 ```
 
-## How it works
+## Files
 
 | File | Responsibility |
 |------|----------------|
-| `config.js` | URLs, credentials, strategy params, **selectors** (the site-specific part) |
+| `config.js` | URLs, target event, guardrails, selectors (page + BetBy-iframe) |
 | `src/browser.js` | Launch Chromium, persist/restore the logged-in session |
-| `src/login.js` | Log in (or verify saved session); pauses for manual 2FA/captcha |
-| `src/strategy.js` | Stake sizing + hard stops (loss/profit/bet-count) |
-| `src/bot.js` | The bet loop: read balance → pick stake → place duel bet → track P&L |
-| `src/index.js` | Entry point / CLI |
+| `src/login.js` | Open the login modal, sign in (or reuse saved session) |
+| `src/inspect.js` | Dump frames + BetBy iframe elements to capture selectors |
+| `src/sportsbook.js` | Locate the BetBy frame → search event → add to slip → stake → place |
+| `src/strategy.js` | Stake sizing + hard stops (bet count / loss / profit) |
+| `src/index.js` | Entry / CLI (`--login-only`, `--inspect`) |
 
-## Tuning selectors
+## Why "just clicking" is the fragile part
 
-The only fragile part is the selectors. To find good ones:
-1. Run `HEADLESS=false npm run dry` and watch where it fails.
-2. Right-click the element it couldn't find → **Inspect**.
-3. Prefer stable selectors: `getByRole`, visible text (`button:has-text("Duel")`),
-   or `data-*` attributes over long CSS class chains.
-4. Override in `.env`, e.g. `SEL_DUEL_BTN='button:has-text("Start Duel")'`.
+Because the sportsbook is a BetBy widget in an iframe, UI automation has to reach
+into that frame and click obfuscated elements that can change without notice. Two
+implications:
 
-## Changing the betting strategy
+1. **Expect to re-capture selectors** with `npm run inspect` when BetBy updates.
+2. For anything **odds-sensitive (e.g. arbitrage across books)**, reading prices
+   out of the BetBy widget and reacting fast enough by clicking is unreliable.
+   Pulling odds from an API-backed venue (Kalshi/Polymarket both have official
+   APIs) on one side and using this bot only for placement is a more robust shape.
 
-Edit `src/strategy.js`. `nextStake(history)` returns the stake for the next bet;
-`history` holds `{stake, delta}` for prior bets, so you can implement
-streak-based or martingale sizing. `MAX_STAKE` is always enforced on top.
+## Strategy
+
+Edit `src/strategy.js`. `nextStake(history)` returns the next stake (`history` holds
+past `{stake, delta}`); `MAX_STAKE` is always enforced. Note sports bets settle
+later, so realized P&L isn't read back in-run — `STOP_LOSS`/`TAKE_PROFIT` are
+wired but only meaningful once you feed settlement data in.
