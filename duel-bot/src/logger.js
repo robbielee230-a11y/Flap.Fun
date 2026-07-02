@@ -1,0 +1,10 @@
+// Tiny timestamped logger.
+const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+export const log = {
+  info: (...a) => console.log(`[${ts()}]`, ...a),
+  warn: (...a) => console.warn(`[${ts()}] WARN`, ...a),
+  error: (...a) => console.error(`[${ts()}] ERROR`, ...a),
+  bet: (...a) => console.log(`[${ts()}] 🎲`, ...a),
+  money: (...a) => console.log(`[${ts()}] 💰`, ...a),
+};

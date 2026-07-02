@@ -1,0 +1,20 @@
+{
+  "name": "duel-bot",
+  "version": "0.1.0",
+  "description": "Playwright automation that logs into a betting site and places 'duel' bets with configurable strategy and safety guardrails.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "login": "node src/index.js --login-only",
+    "dry": "DRY_RUN=true node src/index.js",
+    "postinstall": "playwright install chromium"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "playwright": "^1.48.0"
+  }
+}
